@@ -30,7 +30,7 @@ export type OpenplexerBoard = {
   connectedAt: string
 }
 
-export type AcpClient = 'opencode' | 'claude'
+export type AcpClient = 'opencode' | 'claude' | 'codex'
 
 export type OpenplexerConfig = {
   /** ACP clients to connect to (user may use both opencode and claude) */

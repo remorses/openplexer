@@ -2,6 +2,8 @@
 // as a client via stdio. Uses @agentclientprotocol/sdk for the protocol.
 
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import path from 'node:path'
 import { Writable, Readable } from 'node:stream'
 import {
   ClientSideConnection,
@@ -59,19 +61,45 @@ class MinimalClient implements Client {
   }
 }
 
+// Resolve the ACP binary path for each client. For claude and codex,
+// we resolve the bin entry from the installed npm package so they
+// don't need to be globally installed or in PATH.
+function resolveAcpBinary(client: 'opencode' | 'claude' | 'codex'): { cmd: string; args: string[] } {
+  if (client === 'opencode') {
+    return { cmd: 'opencode', args: ['acp'] }
+  }
+
+  const require = createRequire(import.meta.url)
+  const packageName = client === 'claude'
+    ? '@zed-industries/claude-code-acp'
+    : '@zed-industries/codex-acp'
+  const binName = client === 'claude' ? 'claude-code-acp' : 'codex-acp'
+
+  const pkgJsonPath = require.resolve(`${packageName}/package.json`)
+  const pkgDir = path.dirname(pkgJsonPath)
+  const pkg = require(pkgJsonPath) as { bin: Record<string, string> }
+  const binRelative = pkg.bin[binName]
+  const binPath = path.resolve(pkgDir, binRelative)
+
+  return { cmd: process.execPath, args: [binPath] }
+}
+
 export type AcpConnection = {
   connection: ClientSideConnection
-  client: 'opencode' | 'claude'
+  client: 'opencode' | 'claude' | 'codex'
   kill: () => void
 }
 
 export async function connectAcp({
   client,
 }: {
-  client: 'opencode' | 'claude'
+  client: 'opencode' | 'claude' | 'codex'
 }): Promise<AcpConnection> {
-  const cmd = client === 'opencode' ? 'opencode' : 'claude'
-  const args = ['acp']
+  // opencode has a built-in `opencode acp` subcommand.
+  // claude and codex use standalone ACP adapter packages installed as
+  // dependencies. We resolve the bin path via package.json so they
+  // don't need to be in PATH.
+  const { cmd, args } = resolveAcpBinary(client)
 
   const child = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', 'inherit'],

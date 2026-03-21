@@ -140,6 +140,9 @@ async function syncBoard({
         if (session.source === 'opencode') {
           return `opencode --session ${session.sessionId}`
         }
+        if (session.source === 'codex') {
+          return `codex resume ${session.sessionId}`
+        }
         return `claude --resume ${session.sessionId}`
       })()
 

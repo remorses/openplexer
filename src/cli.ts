@@ -149,6 +149,7 @@ async function connectFlow(): Promise<void> {
       options: [
         { value: 'opencode' as const, label: 'OpenCode' },
         { value: 'claude' as const, label: 'Claude Code' },
+        { value: 'codex' as const, label: 'Codex' },
       ],
       required: true,
     })
