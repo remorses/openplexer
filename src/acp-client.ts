@@ -77,8 +77,8 @@ function resolveAcpBinary(client: 'opencode' | 'claude' | 'codex'): { cmd: strin
 
   const pkgJsonPath = require.resolve(`${packageName}/package.json`)
   const pkgDir = path.dirname(pkgJsonPath)
-  const pkg = require(pkgJsonPath) as { bin: Record<string, string> }
-  const binRelative = pkg.bin[binName]
+  const pkg = require(pkgJsonPath) as { bin: string | Record<string, string> }
+  const binRelative = typeof pkg.bin === 'string' ? pkg.bin : pkg.bin[binName]
   const binPath = path.resolve(pkgDir, binRelative)
 
   return { cmd: process.execPath, args: [binPath] }
