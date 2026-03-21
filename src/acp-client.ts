@@ -102,8 +102,12 @@ export async function connectAcp({
   // don't need to be in PATH.
   const { cmd, args } = resolveAcpBinary(client)
 
+  // Spawn from "/" so the opencode server isn't scoped to a single
+  // project directory. Without this, Session.list() filters by the
+  // current project and we only see sessions for one repo.
   const child = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', 'inherit'],
+    cwd: '/',
   })
 
   const stream = ndJsonStream(
