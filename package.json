@@ -41,11 +41,11 @@
     "@zed-industries/claude-code-acp": "^0.16.2",
     "@zed-industries/codex-acp": "^0.10.0",
     "errore": "workspace:^",
-    "goke": "^6.3.0",
-    "spiceflow": "1.18.0-rsc.11"
+    "goke": "^6.3.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260130.0",
+    "spiceflow": "1.18.0-rsc.11",
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
     "typescript": "5.8.3",

@@ -12,6 +12,7 @@ import {
   type Client,
   type SessionInfo,
 } from '@agentclientprotocol/sdk'
+import type { AcpClient } from './config.ts'
 
 function nodeToWebWritable(nodeStream: Writable): WritableStream<Uint8Array> {
   return new WritableStream<Uint8Array>({
@@ -64,7 +65,7 @@ class MinimalClient implements Client {
 // Resolve the ACP binary path for each client. For claude and codex,
 // we resolve the bin entry from the installed npm package so they
 // don't need to be globally installed or in PATH.
-function resolveAcpBinary(client: 'opencode' | 'claude' | 'codex'): { cmd: string; args: string[] } {
+function resolveAcpBinary(client: AcpClient): { cmd: string; args: string[] } {
   if (client === 'opencode') {
     return { cmd: 'opencode', args: ['acp'] }
   }
@@ -86,14 +87,14 @@ function resolveAcpBinary(client: 'opencode' | 'claude' | 'codex'): { cmd: strin
 
 export type AcpConnection = {
   connection: ClientSideConnection
-  client: 'opencode' | 'claude' | 'codex'
+  client: AcpClient
   kill: () => void
 }
 
 export async function connectAcp({
   client,
 }: {
-  client: 'opencode' | 'claude' | 'codex'
+  client: AcpClient
 }): Promise<AcpConnection> {
   // opencode has a built-in `opencode acp` subcommand.
   // claude and codex use standalone ACP adapter packages installed as
