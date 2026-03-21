@@ -8,7 +8,6 @@ import { goke } from 'goke'
 import {
   intro,
   outro,
-  text,
   note,
   cancel,
   isCancel,
@@ -23,7 +22,7 @@ import { exec } from 'node:child_process'
 import { readConfig, writeConfig, type OpenplexerConfig, type OpenplexerBoard } from './config.ts'
 import { connectAcp, listAllSessions } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
-import { createNotionClient, createBoardDatabase } from './notion.ts'
+import { createNotionClient, createBoardDatabase, getRootPages } from './notion.ts'
 import { evictExistingInstance, getLockPort, startLockServer } from './lock.ts'
 import { startSyncLoop } from './sync.ts'
 
@@ -158,17 +157,20 @@ async function connectFlow(): Promise<void> {
     )
     const repoChoice = await multiselect({
       message: 'Which repos to track?',
-      options: repoSlugs.map((slug) => ({
-        value: slug,
-        label: slug,
-      })),
+      options: [
+        { value: '*', label: '* All repos', hint: 'sync every repo with a git remote' },
+        ...repoSlugs.map((slug) => ({
+          value: slug,
+          label: slug,
+        })),
+      ],
       required: false,
     })
     if (isCancel(repoChoice)) {
       cancel('Setup cancelled')
       process.exit(0)
     }
-    trackedRepos = repoChoice
+    trackedRepos = repoChoice.includes('*') ? [] : repoChoice
   } else {
     log.warn('No git repos found in sessions. All future sessions will be tracked.')
   }
@@ -218,34 +220,48 @@ async function connectFlow(): Promise<void> {
 
   s.stop(`Connected to ${authResult.workspaceName}`)
 
-  // Step 5: Select Notion page
-  const pageInput = await text({
-    message: 'Paste the Notion page URL where the board should be created:',
-    placeholder: 'https://www.notion.so/Your-Page-Title-abc123...',
-    validate(value) {
-      if (!value.includes('notion.so')) {
-        return 'Must be a Notion URL'
-      }
-    },
-  })
-  if (isCancel(pageInput)) {
-    cancel('Setup cancelled')
-    process.exit(0)
-  }
+  // Step 5: Select Notion page from root pages
+  const notion = createNotionClient({ token: authResult.accessToken })
+  s.start('Fetching Notion pages...')
+  const rootPages = await getRootPages({ notion })
+  s.stop(`Found ${rootPages.length} root pages`)
 
-  // Extract page ID from URL — Notion URLs end with a 32-char hex ID
-  const pageIdMatch = pageInput.match(/([a-f0-9]{32})(?:\?|$)/i) || pageInput.match(/([a-f0-9-]{36})(?:\?|$)/i)
-  if (!pageIdMatch) {
-    log.error('Could not extract page ID from URL')
+  if (rootPages.length === 0) {
+    log.error('No root pages found in your Notion workspace. Create a page first.')
     process.exit(1)
   }
-  const pageId = pageIdMatch[1]
 
-  note('Make this page private if you don\'t want others reading session info.', 'Privacy')
+  // Filter out pages already used by other boards
+  const usedPageIds = new Set(config.boards.map((b) => b.notionPageId))
+  const availablePages = rootPages.filter((p) => !usedPageIds.has(p.id))
+
+  if (availablePages.length === 0) {
+    log.error('All root pages are already connected to boards.')
+    process.exit(1)
+  }
+
+  const pageId: string = await (async () => {
+    if (availablePages.length === 1) {
+      log.info(`Auto-selected page: ${availablePages[0].icon} ${availablePages[0].title}`)
+      return availablePages[0].id
+    }
+    const pageChoice = await select({
+      message: 'Which Notion page should hold the board?',
+      options: availablePages.map((p) => ({
+        value: p.id,
+        label: `${p.icon} ${p.title}`.trim(),
+        hint: usedPageIds.has(p.id) ? 'already used' : undefined,
+      })),
+    })
+    if (isCancel(pageChoice)) {
+      cancel('Setup cancelled')
+      process.exit(0)
+    }
+    return pageChoice
+  })()
 
   // Step 6: Create database
   s.start('Creating board database...')
-  const notion = createNotionClient({ token: authResult.accessToken })
   const { databaseId } = await createBoardDatabase({ notion, pageId })
   s.stop('Board database created')
 

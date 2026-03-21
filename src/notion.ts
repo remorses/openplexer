@@ -19,6 +19,64 @@ export function createNotionClient({ token }: { token: string }): Client {
   return new Client({ auth: token })
 }
 
+export type RootPage = {
+  id: string
+  title: string
+  url: string
+  icon: string
+}
+
+// Get root-level pages (parent.type === 'workspace') using notion.search.
+// Paginate up to 3 pages of 100 results to find workspace-level pages.
+export async function getRootPages({ notion }: { notion: Client }): Promise<RootPage[]> {
+  const pages: RootPage[] = []
+  let startCursor: string | undefined
+
+  for (let page = 0; page < 3; page++) {
+    const res = await notion.search({
+      filter: { property: 'object', value: 'page' },
+      page_size: 100,
+      sort: { direction: 'descending', timestamp: 'last_edited_time' },
+      ...(startCursor ? { start_cursor: startCursor } : {}),
+    })
+
+    for (const result of res.results) {
+      if (!('parent' in result) || !('properties' in result)) {
+        continue
+      }
+      if (result.parent.type !== 'workspace') {
+        continue
+      }
+      const titleProp = Object.values(result.properties).find((p) => p.type === 'title')
+      const title = (() => {
+        if (!titleProp || titleProp.type !== 'title') {
+          return ''
+        }
+        return titleProp.title.map((t: { plain_text: string }) => t.plain_text).join('')
+      })()
+
+      const icon = (() => {
+        if (!result.icon) {
+          return ''
+        }
+        if (result.icon.type === 'emoji') {
+          return result.icon.emoji
+        }
+        return ''
+      })()
+
+      pages.push({ id: result.id, title: title || result.url, url: result.url, icon })
+    }
+
+    if (!res.has_more || !res.next_cursor) {
+      break
+    }
+    startCursor = res.next_cursor
+  }
+
+  return pages
+}
+
 export async function createBoardDatabase({
   notion,
   pageId,
