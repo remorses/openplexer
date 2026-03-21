@@ -23,7 +23,7 @@ const app = new Spiceflow()
     handler() {
       return new Response(null, {
         status: 302,
-        headers: { Location: 'https://github.com/remorses/kimaki/tree/main/openplexer' },
+        headers: { Location: 'https://github.com/remorses/openplexer' },
       })
     },
   })
