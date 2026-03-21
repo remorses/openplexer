@@ -7,8 +7,6 @@ export const STATUS_OPTIONS = [
   { name: 'Not Started', color: 'default' as const },
   { name: 'In Progress', color: 'blue' as const },
   { name: 'Done', color: 'green' as const },
-  { name: 'Needs Attention', color: 'red' as const },
-  { name: 'Ignored', color: 'gray' as const },
 ]
 
 export type CreateDatabaseResult = {
