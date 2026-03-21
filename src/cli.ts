@@ -18,6 +18,7 @@ import {
   spinner,
 } from '@clack/prompts'
 import crypto from 'node:crypto'
+import path from 'node:path'
 import { exec } from 'node:child_process'
 import { readConfig, writeConfig, type OpenplexerConfig, type OpenplexerBoard, type AcpClient } from './config.ts'
 import { connectAcp, listAllSessions, type AcpConnection } from './acp-client.ts'
@@ -120,7 +121,7 @@ cli.command('startup', 'Show startup registration status').action(async () => {
 cli
   .command('startup enable', 'Register openplexer to run on login')
   .action(async () => {
-    const openplexerBin = process.argv[1]
+    const openplexerBin = path.resolve(process.argv[1])
     await enableStartupService({ command: process.execPath, args: [openplexerBin] })
     console.log(`Registered at ${getServiceLocationDescription()}`)
   })
@@ -328,6 +329,10 @@ async function connectFlow(): Promise<void> {
   config.boards.push(board)
   writeConfig(config)
 
+  // Resolve absolute path to the CLI script so startup service and
+  // detached spawn work regardless of cwd at login/invocation time.
+  const openplexerBin = path.resolve(process.argv[1])
+
   // Step 8: Offer startup registration
   const alreadyEnabled = await isStartupServiceEnabled()
   if (!alreadyEnabled) {
@@ -335,7 +340,6 @@ async function connectFlow(): Promise<void> {
       message: 'Register openplexer to run on login?',
     })
     if (!isCancel(registerStartup) && registerStartup) {
-      const openplexerBin = process.argv[1]
       await enableStartupService({ command: process.execPath, args: [openplexerBin] })
       log.success(`Registered at ${getServiceLocationDescription()}`)
     }
@@ -345,7 +349,6 @@ async function connectFlow(): Promise<void> {
 
   // Step 9: Spawn daemon in background so syncing starts immediately
   const { spawn: spawnProcess } = await import('node:child_process')
-  const openplexerBin = process.argv[1]
   const child = spawnProcess(process.execPath, [openplexerBin], {
     detached: true,
     stdio: 'ignore',

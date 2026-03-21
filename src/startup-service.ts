@@ -8,7 +8,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { exec as _exec } from 'node:child_process'
+import { exec as _exec, execFile as _execFile } from 'node:child_process'
 
 const SERVICE_NAME = 'com.openplexer'
 
@@ -104,9 +104,21 @@ export async function enableStartupService({ command, args }: StartupServiceOpti
         return s.includes(' ') ? `"${s}"` : s
       })
       .join(' ')
-    await execAsync(
-      `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v openplexer /t REG_SZ /d "${execLine}" /f`,
-    )
+    // Use execFile with args array to avoid shell-quoting issues
+    await new Promise<void>((resolve, reject) => {
+      _execFile(
+        'reg',
+        ['add', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run', '/v', 'openplexer', '/t', 'REG_SZ', '/d', execLine, '/f'],
+        { timeout: 5000 },
+        (error) => {
+          if (error) {
+            reject(error)
+          } else {
+            resolve()
+          }
+        },
+      )
+    })
   } else {
     throw new Error(`Unsupported platform: ${platform}`)
   }
