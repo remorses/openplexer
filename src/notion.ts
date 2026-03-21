@@ -90,6 +90,7 @@ export async function createBoardDatabase({
 }): Promise<CreateDatabaseResult> {
   const database = await notion.databases.create({
     parent: { type: 'page_id', page_id: pageId },
+    is_inline: true,
     title: [{ text: { content: 'openplexer - Coding Sessions' } }],
     initial_data_source: {
       properties: {
@@ -112,17 +113,30 @@ export async function createBoardDatabase({
   })
 
   // Database is created with a default Table view. Create a Board view
-  // grouped by Status so sessions show as a kanban board.
+  // grouped by Status so sessions show as a kanban board, then delete the
+  // default Table view so Board becomes the default.
   const dataSourceId = 'data_sources' in database
     ? database.data_sources?.[0]?.id
     : undefined
   if (dataSourceId) {
+    // List existing views (should contain the auto-created Table view)
+    const existingViews = await notion.views.list({ database_id: database.id })
+    const tableViewIds = existingViews.results.map((v) => v.id)
+
+    // Create the Board view
     await notion.views.create({
       database_id: database.id,
       data_source_id: dataSourceId,
       name: 'Board',
       type: 'board',
     })
+
+    // Delete the default Table view(s) so Board is the only (and default) view
+    for (const viewId of tableViewIds) {
+      await notion.views.delete({ view_id: viewId }).catch(() => {
+        // Ignore errors — can't delete the last view, but we just created Board
+      })
+    }
   }
 
   return { databaseId: database.id }
