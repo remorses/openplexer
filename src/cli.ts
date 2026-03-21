@@ -347,15 +347,10 @@ async function connectFlow(): Promise<void> {
     log.info(`Already registered at ${getServiceLocationDescription()}`)
   }
 
-  // Step 9: Spawn daemon in background so syncing starts immediately
-  const { spawn: spawnProcess } = await import('node:child_process')
-  const child = spawnProcess(process.execPath, [openplexerBin], {
-    detached: true,
-    stdio: 'ignore',
-  })
-  child.unref()
+  outro('Board connected! Starting sync, keep this process running.')
 
-  outro('Board connected! Sync daemon started in background.')
+  // Transition directly into the sync daemon instead of spawning a child
+  await startDaemon(config)
 }
 
 // --- Daemon ---
