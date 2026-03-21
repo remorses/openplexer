@@ -122,19 +122,24 @@ async function syncBoard({
   for (const { session, repoSlug, repoUrl, branch } of filteredSessions) {
     const existingPageId = board.syncedSessions[session.sessionId]
 
+    const title = session.title || `Session ${session.sessionId.slice(0, 8)}`
+
     if (existingPageId) {
       // Update existing page
-      await rateLimitedCall(() => {
-        return updateSessionPage({
-          notion,
-          pageId: existingPageId,
-          title: session.title || undefined,
-          updatedAt: session.updatedAt || undefined,
+      try {
+        await rateLimitedCall(() => {
+          return updateSessionPage({
+            notion,
+            pageId: existingPageId,
+            title: session.title || undefined,
+            updatedAt: session.updatedAt || undefined,
+          })
         })
-      })
+      } catch (err) {
+        console.error(`Error updating "${title}" (${repoSlug}):`, err instanceof Error ? err.message : err)
+      }
     } else {
       // Create new page
-      const title = session.title || `Session ${session.sessionId.slice(0, 8)}`
       const branchUrl = `${repoUrl}/tree/${branch}`
       const resumeCommand = (() => {
         if (session.source === 'opencode') {
@@ -149,25 +154,30 @@ async function syncBoard({
       // Try to get Discord URL if kimaki is available
       const discordUrl = await getKimakiDiscordUrl(session.sessionId)
 
-      const pageId = await rateLimitedCall(() => {
-        return createSessionPage({
-          notion,
-          databaseId: board.notionDatabaseId,
-          title,
-          sessionId: session.sessionId,
-          status: 'In Progress',
-          repoSlug,
-          branchUrl,
-          resumeCommand,
-          assigneeId: board.notionUserId,
-          folder: session.cwd || '',
-          discordUrl: discordUrl || undefined,
-          updatedAt: session.updatedAt || undefined,
+      try {
+        const pageId = await rateLimitedCall(() => {
+          return createSessionPage({
+            notion,
+            databaseId: board.notionDatabaseId,
+            title,
+            sessionId: session.sessionId,
+            status: 'In Progress',
+            repoSlug,
+            branchUrl,
+            resumeCommand,
+            assigneeId: board.notionUserId,
+            folder: session.cwd || '',
+            discordUrl: discordUrl || undefined,
+            updatedAt: session.updatedAt || undefined,
+          })
         })
-      })
 
-      board.syncedSessions[session.sessionId] = pageId
-      console.log(`  + ${title} (${repoSlug})`)
+        board.syncedSessions[session.sessionId] = pageId
+        const notionUrl = `https://notion.so/${pageId.replace(/-/g, '')}`
+        console.log(`+ Added "${title}" (${repoSlug}) → ${notionUrl}`)
+      } catch (err) {
+        console.error(`Error adding "${title}" (${repoSlug}):`, err instanceof Error ? err.message : err)
+      }
     }
   }
 }
