@@ -19,8 +19,8 @@ import {
 } from '@clack/prompts'
 import crypto from 'node:crypto'
 import { exec } from 'node:child_process'
-import { readConfig, writeConfig, type OpenplexerConfig, type OpenplexerBoard } from './config.ts'
-import { connectAcp, listAllSessions } from './acp-client.ts'
+import { readConfig, writeConfig, type OpenplexerConfig, type OpenplexerBoard, type AcpClient } from './config.ts'
+import { connectAcp, listAllSessions, type AcpConnection } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
 import { createNotionClient, createBoardDatabase, getRootPages } from './notion.ts'
 import { evictExistingInstance, getLockPort, startLockServer } from './lock.ts'
@@ -54,7 +54,7 @@ cli.command('status', 'Show sync state').action(async () => {
     console.log('No boards configured. Run `openplexer connect` to add one.')
     return
   }
-  console.log(`Client: ${config.client}`)
+  console.log(`Clients: ${config.clients.join(', ')}`)
   console.log(`Boards: ${config.boards.length}`)
   config.boards.forEach((board, i) => {
     console.log(
@@ -106,45 +106,56 @@ cli.parse()
 async function connectFlow(): Promise<void> {
   intro('openplexer — connect a Notion board')
 
-  const config = readConfig() || ({ client: 'opencode', boards: [] } as OpenplexerConfig)
+  const config = readConfig() || ({ clients: [], boards: [] } as OpenplexerConfig)
 
-  // Step 1: Choose ACP client (only on first run)
-  if (config.boards.length === 0) {
-    const clientChoice = await select({
-      message: 'Which coding agent do you use?',
+  // Step 1: Choose ACP clients (only on first run)
+  if (config.clients.length === 0) {
+    const clientChoice = await multiselect({
+      message: 'Which coding agents do you use?',
       options: [
         { value: 'opencode' as const, label: 'OpenCode' },
         { value: 'claude' as const, label: 'Claude Code' },
       ],
+      required: true,
     })
     if (isCancel(clientChoice)) {
       cancel('Setup cancelled')
       process.exit(0)
     }
-    config.client = clientChoice
+    config.clients = clientChoice
   }
 
-  // Step 2: Spawn ACP and discover projects
+  // Step 2: Spawn ACP for each client and discover projects
   const s = spinner()
-  s.start(`Connecting to ${config.client}...`)
+  const clientLabel = config.clients.join(' + ')
+  s.start(`Connecting to ${clientLabel}...`)
 
   let repoSlugs: string[] = []
-  try {
-    const acp = await connectAcp({ client: config.client })
-    const sessions = await listAllSessions({ connection: acp.connection })
-    s.stop(`Found ${sessions.length} sessions`)
+  const connectedClients: AcpClient[] = []
 
-    // Extract unique repos from session cwds
-    const cwds = [...new Set(sessions.map((sess) => sess.cwd).filter(Boolean))] as string[]
-    const repoInfos = await Promise.all(cwds.map((cwd) => getRepoInfo({ cwd })))
-    repoSlugs = [...new Set(repoInfos.filter(Boolean).map((r) => r!.slug))]
+  for (const client of config.clients) {
+    try {
+      const acp = await connectAcp({ client })
+      const sessions = await listAllSessions({ connection: acp.connection })
 
-    acp.kill()
-  } catch (err) {
-    s.stop('Failed to connect to ACP')
-    log.error(
-      `Could not connect to ${config.client}. Make sure "${config.client}" is installed and in PATH.`,
-    )
+      // Extract unique repos from session cwds
+      const cwds = [...new Set(sessions.map((sess) => sess.cwd).filter(Boolean))] as string[]
+      const repoInfos = await Promise.all(cwds.map((cwd) => getRepoInfo({ cwd })))
+      repoSlugs.push(...repoInfos.filter(Boolean).map((r) => r!.slug))
+
+      acp.kill()
+      connectedClients.push(client)
+      log.info(`${client}: ${sessions.length} sessions`)
+    } catch {
+      log.warn(`Could not connect to ${client}. Make sure "${client}" is installed and in PATH.`)
+    }
+  }
+
+  repoSlugs = [...new Set(repoSlugs)]
+  s.stop(`Found ${repoSlugs.length} repos from ${connectedClients.join(' + ')}`)
+
+  if (connectedClients.length === 0) {
+    log.error('Could not connect to any ACP agent.')
     process.exit(1)
   }
 
@@ -304,8 +315,21 @@ async function startDaemon(config: OpenplexerConfig): Promise<void> {
 
   console.log(`openplexer daemon started (PID ${process.pid}, port ${port})`)
 
-  const acp = await connectAcp({ client: config.client })
-  console.log(`Connected to ${config.client} via ACP`)
+  const connections: AcpConnection[] = []
+  for (const client of config.clients) {
+    try {
+      const acp = await connectAcp({ client })
+      connections.push(acp)
+      console.log(`Connected to ${client} via ACP`)
+    } catch {
+      console.error(`Failed to connect to ${client}, skipping`)
+    }
+  }
 
-  await startSyncLoop({ config, acpConnection: acp.connection })
+  if (connections.length === 0) {
+    console.error('Could not connect to any ACP agent.')
+    process.exit(1)
+  }
+
+  await startSyncLoop({ config, acpConnections: connections })
 }

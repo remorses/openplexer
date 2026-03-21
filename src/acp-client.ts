@@ -61,6 +61,7 @@ class MinimalClient implements Client {
 
 export type AcpConnection = {
   connection: ClientSideConnection
+  client: 'opencode' | 'claude'
   kill: () => void
 }
 
@@ -92,6 +93,7 @@ export async function connectAcp({
 
   return {
     connection,
+    client,
     kill: () => {
       child.kill()
     },

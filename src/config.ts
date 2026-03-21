@@ -30,9 +30,11 @@ export type OpenplexerBoard = {
   connectedAt: string
 }
 
+export type AcpClient = 'opencode' | 'claude'
+
 export type OpenplexerConfig = {
-  /** ACP client: which agent to connect to */
-  client: 'opencode' | 'claude'
+  /** ACP clients to connect to (user may use both opencode and claude) */
+  clients: AcpClient[]
   /** Multiple boards this CLI syncs to */
   boards: OpenplexerBoard[]
 }

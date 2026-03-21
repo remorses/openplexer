@@ -2,11 +2,10 @@
 // Runs every 5 seconds, creates new pages for untracked sessions,
 // updates existing ones when title/updatedAt changes.
 
-import type { ClientSideConnection, SessionInfo } from '@agentclientprotocol/sdk'
-import type { Client } from '@notionhq/client'
-import type { OpenplexerBoard, OpenplexerConfig } from './config.ts'
+import type { SessionInfo } from '@agentclientprotocol/sdk'
+import type { OpenplexerBoard, OpenplexerConfig, AcpClient } from './config.ts'
 import { writeConfig } from './config.ts'
-import { listAllSessions } from './acp-client.ts'
+import { listAllSessions, type AcpConnection } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
 import {
   createNotionClient,
@@ -18,18 +17,20 @@ import { execFile } from 'node:child_process'
 
 const SYNC_INTERVAL_MS = 5000
 
+type TaggedSession = SessionInfo & { source: AcpClient }
+
 export async function startSyncLoop({
   config,
-  acpConnection,
+  acpConnections,
 }: {
   config: OpenplexerConfig
-  acpConnection: ClientSideConnection
+  acpConnections: AcpConnection[]
 }): Promise<void> {
   console.log(`Syncing ${config.boards.length} board(s) every ${SYNC_INTERVAL_MS / 1000}s`)
 
   const tick = async () => {
     try {
-      await syncOnce({ config, acpConnection })
+      await syncOnce({ config, acpConnections })
     } catch (err) {
       console.error('Sync error:', err)
     }
@@ -44,15 +45,27 @@ export async function startSyncLoop({
 
 async function syncOnce({
   config,
-  acpConnection,
+  acpConnections,
 }: {
   config: OpenplexerConfig
-  acpConnection: ClientSideConnection
+  acpConnections: AcpConnection[]
 }): Promise<void> {
-  const sessions = await listAllSessions({ connection: acpConnection })
+  // Collect sessions from all ACP connections, tagged with their source
+  const sessions: TaggedSession[] = []
+  const seenIds = new Set<string>()
+
+  for (const acp of acpConnections) {
+    const clientSessions = await listAllSessions({ connection: acp.connection })
+    for (const session of clientSessions) {
+      if (!seenIds.has(session.sessionId)) {
+        seenIds.add(session.sessionId)
+        sessions.push({ ...session, source: acp.client })
+      }
+    }
+  }
 
   for (const board of config.boards) {
-    await syncBoard({ config, board, sessions })
+    await syncBoard({ board, sessions })
   }
 
   // Persist updated syncedSessions
@@ -60,19 +73,17 @@ async function syncOnce({
 }
 
 async function syncBoard({
-  config,
   board,
   sessions,
 }: {
-  config: OpenplexerConfig
   board: OpenplexerBoard
-  sessions: SessionInfo[]
+  sessions: TaggedSession[]
 }): Promise<void> {
   const notion = createNotionClient({ token: board.notionToken })
 
   // Filter sessions to tracked repos
   const filteredSessions: Array<{
-    session: SessionInfo
+    session: TaggedSession
     repoSlug: string
     repoUrl: string
     branch: string
@@ -126,7 +137,7 @@ async function syncBoard({
       const title = session.title || `Session ${session.sessionId.slice(0, 8)}`
       const branchUrl = `${repoUrl}/tree/${branch}`
       const resumeCommand = (() => {
-        if (config.client === 'opencode') {
+        if (session.source === 'opencode') {
           return `opencode --session ${session.sessionId}`
         }
         return `claude --resume ${session.sessionId}`
