@@ -119,16 +119,33 @@ export async function createBoardDatabase({
     ? database.data_sources?.[0]?.id
     : undefined
   if (dataSourceId) {
+    // Retrieve the data source to get the Status property ID for group_by
+    const dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId })
+    const statusPropertyId = 'properties' in dataSource
+      ? Object.entries(dataSource.properties as Record<string, { id: string; type: string }>)
+          .find(([name]) => name === 'Status')?.[1]?.id
+      : undefined
+
     // List existing views (should contain the auto-created Table view)
     const existingViews = await notion.views.list({ database_id: database.id })
     const tableViewIds = existingViews.results.map((v) => v.id)
 
-    // Create the Board view
+    // Create the Board view, grouped by Status
     await notion.views.create({
       database_id: database.id,
       data_source_id: dataSourceId,
       name: 'Board',
       type: 'board',
+      ...(statusPropertyId && {
+        configuration: {
+          type: 'board' as const,
+          group_by: {
+            type: 'select' as const,
+            property_id: statusPropertyId,
+            sort: { type: 'manual' as const },
+          },
+        },
+      }),
     })
 
     // Delete the default Table view(s) so Board is the only (and default) view
