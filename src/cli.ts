@@ -25,8 +25,16 @@ import { getRepoInfo } from './git.ts'
 import { createNotionClient, createBoardDatabase, getRootPages } from './notion.ts'
 import { evictExistingInstance, getLockPort, startLockServer } from './lock.ts'
 import { startSyncLoop } from './sync.ts'
+import {
+  enableStartupService,
+  disableStartupService,
+  isStartupServiceEnabled,
+  getServiceLocationDescription,
+} from './startup-service.ts'
 
 const OPENPLEXER_URL = 'https://openplexer.com'
+
+process.title = 'openplexer'
 
 const cli = goke('openplexer')
 
@@ -98,6 +106,31 @@ cli.command('boards', 'List configured boards').action(async () => {
     console.log(`   Synced: ${Object.keys(board.syncedSessions).length} sessions`)
   })
 })
+
+// Startup command: manage startup registration
+cli.command('startup', 'Show startup registration status').action(async () => {
+  const enabled = await isStartupServiceEnabled()
+  if (enabled) {
+    console.log(`Registered: ${getServiceLocationDescription()}`)
+  } else {
+    console.log('Not registered to run on login.')
+  }
+})
+
+cli
+  .command('startup enable', 'Register openplexer to run on login')
+  .action(async () => {
+    const openplexerBin = process.argv[1]
+    await enableStartupService({ command: process.execPath, args: [openplexerBin] })
+    console.log(`Registered at ${getServiceLocationDescription()}`)
+  })
+
+cli
+  .command('startup disable', 'Unregister openplexer from login')
+  .action(async () => {
+    await disableStartupService()
+    console.log('Unregistered from login startup.')
+  })
 
 cli.parse()
 
@@ -296,14 +329,30 @@ async function connectFlow(): Promise<void> {
   writeConfig(config)
 
   // Step 8: Offer startup registration
-  const registerStartup = await confirm({
-    message: 'Register openplexer to run on startup?',
-  })
-  if (!isCancel(registerStartup) && registerStartup) {
-    log.info('Startup registration not yet implemented. Run `openplexer` manually for now.')
+  const alreadyEnabled = await isStartupServiceEnabled()
+  if (!alreadyEnabled) {
+    const registerStartup = await confirm({
+      message: 'Register openplexer to run on login?',
+    })
+    if (!isCancel(registerStartup) && registerStartup) {
+      const openplexerBin = process.argv[1]
+      await enableStartupService({ command: process.execPath, args: [openplexerBin] })
+      log.success(`Registered at ${getServiceLocationDescription()}`)
+    }
+  } else {
+    log.info(`Already registered at ${getServiceLocationDescription()}`)
   }
 
-  outro('Board connected! Run `openplexer` to start syncing.')
+  // Step 9: Spawn daemon in background so syncing starts immediately
+  const { spawn: spawnProcess } = await import('node:child_process')
+  const openplexerBin = process.argv[1]
+  const child = spawnProcess(process.execPath, [openplexerBin], {
+    detached: true,
+    stdio: 'ignore',
+  })
+  child.unref()
+
+  outro('Board connected! Sync daemon started in background.')
 }
 
 // --- Daemon ---
