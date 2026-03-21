@@ -26,10 +26,10 @@ export type RootPage = {
   icon: string
 }
 
-// Get all accessible pages using notion.search. With OAuth integrations,
-// only pages the user explicitly shared during consent are returned.
-// We don't filter by parent.type === 'workspace' because shared pages
-// can be nested under other pages.
+// Get root-level pages (parent.type === 'workspace') using notion.search.
+// Only pages are returned (not databases). With OAuth integrations,
+// only pages the user explicitly shared during consent are searchable,
+// so users must share root-level pages for them to appear here.
 export async function getRootPages({ notion }: { notion: Client }): Promise<RootPage[]> {
   const pages: RootPage[] = []
   let startCursor: string | undefined
@@ -44,6 +44,10 @@ export async function getRootPages({ notion }: { notion: Client }): Promise<Root
 
     for (const result of res.results) {
       if (!('parent' in result) || !('properties' in result)) {
+        continue
+      }
+      // Only show root pages (direct children of workspace), skip databases
+      if (result.object !== 'page' || result.parent.type !== 'workspace') {
         continue
       }
 

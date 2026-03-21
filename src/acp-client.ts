@@ -72,9 +72,9 @@ function resolveAcpBinary(client: AcpClient): { cmd: string; args: string[] } {
 
   const require = createRequire(import.meta.url)
   const packageName = client === 'claude'
-    ? '@zed-industries/claude-code-acp'
+    ? '@zed-industries/claude-agent-acp'
     : '@zed-industries/codex-acp'
-  const binName = client === 'claude' ? 'claude-code-acp' : 'codex-acp'
+  const binName = client === 'claude' ? 'claude-agent-acp' : 'codex-acp'
 
   const pkgJsonPath = require.resolve(`${packageName}/package.json`)
   const pkgDir = path.dirname(pkgJsonPath)
