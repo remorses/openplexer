@@ -241,6 +241,7 @@ async function connectFlow(): Promise<void> {
     workspaceName: string
     notionUserId?: string
     notionUserName?: string
+    duplicatedTemplateId?: string | null
   }
   let authResult: AuthResult | undefined
   const maxAttempts = 150 // 5 minutes at 2s intervals
@@ -311,7 +312,9 @@ async function connectFlow(): Promise<void> {
   const { databaseId } = await createBoardDatabase({ notion, pageId })
   s.stop('Board database created')
 
-  log.success('Open the database in Notion and click "+ Add a view" → Board, grouped by Status.')
+  // Show link to the Notion page so user can open it directly
+  const notionPageUrl = `https://notion.so/${pageId.replace(/-/g, '')}`
+  log.success(`Board created: ${notionPageUrl}`)
 
   // Step 7: Save to config
   const board: OpenplexerBoard = {

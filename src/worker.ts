@@ -112,7 +112,14 @@ const app = new Spiceflow()
         workspace_id: string
         workspace_name: string
         owner: { type: string; user?: { id: string; name: string } }
+        duplicated_template_id?: string | null
       }
+
+      // Build Notion page URL from duplicated template ID (if present)
+      const duplicatedTemplateId = tokenData.duplicated_template_id ?? null
+      const notionPageUrl = duplicatedTemplateId
+        ? `https://notion.so/${duplicatedTemplateId.replace(/-/g, '')}`
+        : null
 
       // Store tokens in KV with 5 minute TTL
       const kvPayload = {
@@ -122,30 +129,83 @@ const app = new Spiceflow()
         workspaceName: tokenData.workspace_name,
         notionUserId: tokenData.owner?.user?.id,
         notionUserName: tokenData.owner?.user?.name,
+        duplicatedTemplateId,
       }
 
       await env.OPENPLEXER_KV.put(`auth:${stateParam}`, JSON.stringify(kvPayload), {
         expirationTtl: 300,
       })
 
-      // Show success page
+      // Show success page with link to the created Notion page (if template was used)
+      const pageLink = notionPageUrl
+        ? `<a class="button" href="${notionPageUrl}" target="_blank" rel="noopener">Open in Notion <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 3h7v7M13 3L5 11"/></svg></a>`
+        : ''
+      const subtitle = notionPageUrl
+        ? 'Your board page has been created. You can close this tab and return to the CLI.'
+        : 'You can close this tab and return to the CLI.'
+
       return new Response(
         `<!DOCTYPE html>
 <html>
-<head><title>openplexer - Connected</title>
+<head>
+<title>openplexer - Connected</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <style>
-  body { font-family: system-ui, sans-serif; display: flex; justify-content: center;
-         align-items: center; height: 100vh; margin: 0; background: #1a1a2e; color: #eee; }
-  .card { text-align: center; padding: 48px; border-radius: 12px;
-          background: #16213e; max-width: 400px; }
-  h1 { margin: 0 0 16px; font-size: 24px; }
-  p { color: #999; margin: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #fff;
+    --fg: #000;
+    --muted: #666;
+    --border: #eaeaea;
+    --link: #000;
+    --link-hover: #666;
+    --checkmark-bg: #000;
+    --checkmark-fg: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #000;
+      --fg: #fff;
+      --muted: #888;
+      --border: #333;
+      --link: #fff;
+      --link-hover: #999;
+      --checkmark-bg: #fff;
+      --checkmark-fg: #000;
+    }
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; background: var(--bg); color: var(--fg);
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  }
+  .container { text-align: center; padding: 32px; max-width: 380px; }
+  .checkmark {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: var(--checkmark-bg); color: var(--checkmark-fg);
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 24px; font-size: 20px;
+  }
+  h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 8px; }
+  p { font-size: 14px; color: var(--muted); line-height: 1.5; margin-bottom: 24px; }
+  a.button {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 6px; font-size: 14px; font-weight: 500;
+    color: var(--link); text-decoration: none;
+    border: 1px solid var(--border); transition: color 0.15s;
+  }
+  a.button:hover { color: var(--link-hover); }
+  a.button svg { width: 16px; height: 16px; }
 </style>
 </head>
 <body>
-  <div class="card">
+  <div class="container">
+    <div class="checkmark">&#10003;</div>
     <h1>Connected to Notion</h1>
-    <p>You can close this tab and return to the CLI.</p>
+    <p>${subtitle}</p>
+    ${pageLink}
   </div>
 </body>
 </html>`,
