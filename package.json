@@ -40,7 +40,7 @@
     "@notionhq/client": "^5.13.0",
     "@zed-industries/claude-code-acp": "^0.16.2",
     "@zed-industries/codex-acp": "^0.10.0",
-    "errore": "workspace:^",
+    "errore": "*",
     "goke": "^6.3.0"
   },
   "devDependencies": {
