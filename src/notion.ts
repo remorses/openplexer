@@ -143,6 +143,7 @@ export async function createBoardDatabase({
             type: 'select' as const,
             property_id: statusPropertyId,
             sort: { type: 'manual' as const },
+            hide_empty_groups: false,
           },
         },
       }),
@@ -171,7 +172,7 @@ export async function createExamplePage({
     parent: { database_id: databaseId },
     properties: {
       Name: { title: [{ text: { content: 'Sessions will appear here automatically' } }] },
-      Status: { select: { name: 'Not Started' } },
+      Status: { select: { name: 'In Progress' } },
       'Session ID': { rich_text: [{ text: { content: 'example' } }] },
       Repo: { select: { name: 'owner/repo' } },
       Resume: { rich_text: [{ text: { content: 'opencode --session <id>' } }] },
