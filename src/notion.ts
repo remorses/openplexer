@@ -142,6 +142,125 @@ export async function createBoardDatabase({
   return { databaseId: database.id }
 }
 
+// Create an example page in the database explaining how sessions appear.
+export async function createExamplePage({
+  notion,
+  databaseId,
+}: {
+  notion: Client
+  databaseId: string
+}): Promise<string> {
+  const page = await notion.pages.create({
+    parent: { database_id: databaseId },
+    properties: {
+      Name: { title: [{ text: { content: 'Sessions will appear here automatically' } }] },
+      Status: { select: { name: 'Not Started' } },
+      'Session ID': { rich_text: [{ text: { content: 'example' } }] },
+      Repo: { select: { name: 'owner/repo' } },
+      Resume: { rich_text: [{ text: { content: 'opencode --session <id>' } }] },
+      Folder: { rich_text: [{ text: { content: '/path/to/project' } }] },
+    } as Parameters<Client['pages']['create']>[0]['properties'],
+    children: [
+      {
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            {
+              type: 'text',
+              text: { content: 'Each card on this board represents a coding session from OpenCode, Claude Code, or Codex. openplexer syncs them automatically every few seconds.' },
+            },
+          ],
+        },
+      },
+      { type: 'divider', divider: {} },
+      {
+        type: 'heading_3',
+        heading_3: {
+          rich_text: [{ type: 'text', text: { content: 'What each field means' } }],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Status' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — In Progress while the session is active, Done when finished. You can set Needs Attention or Ignored manually.' } },
+          ],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Repo' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — The GitHub repository the session is working in (owner/repo).' } },
+          ],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Branch' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — Link to the git branch on GitHub.' } },
+          ],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Resume' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — Command to resume the session in your terminal.' } },
+          ],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Share URL' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — Public share link for the session (if available).' } },
+          ],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Discord' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — Link to the Discord thread (if using kimaki).' } },
+          ],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Assignee' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — The Notion user who authorized the integration.' } },
+          ],
+        },
+      },
+      { type: 'divider', divider: {} },
+      {
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [
+            {
+              type: 'text',
+              text: { content: 'You can archive this card once real sessions start appearing.' },
+              annotations: { italic: true, color: 'gray' },
+            },
+          ],
+        },
+      },
+    ] as Parameters<Client['blocks']['children']['append']>[0]['children'],
+  })
+
+  return page.id
+}
+
 export async function createSessionPage({
   notion,
   databaseId,

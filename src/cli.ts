@@ -23,7 +23,7 @@ import { exec } from 'node:child_process'
 import { readConfig, writeConfig, type OpenplexerConfig, type OpenplexerBoard, type AcpClient } from './config.ts'
 import { connectAcp, listAllSessions, type AcpConnection } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
-import { createNotionClient, createBoardDatabase, getRootPages } from './notion.ts'
+import { createNotionClient, createBoardDatabase, createExamplePage, getRootPages } from './notion.ts'
 import { evictExistingInstance, getLockPort, startLockServer } from './lock.ts'
 import { startSyncLoop } from './sync.ts'
 import {
@@ -307,9 +307,10 @@ async function connectFlow(): Promise<void> {
     return pageChoice
   })()
 
-  // Step 6: Create database
+  // Step 6: Create database and seed with an example page
   s.start('Creating board database...')
   const { databaseId } = await createBoardDatabase({ notion, pageId })
+  await createExamplePage({ notion, databaseId })
   s.stop('Board database created')
 
   // Show link to the Notion page so user can open it directly
