@@ -1,0 +1,67 @@
+{
+  "name": "openplexer",
+  "version": "0.0.1",
+  "description": "Track coding sessions in Notion boards. Syncs ACP sessions from OpenCode and Claude Code to collaborative Notion databases.",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "bin": "dist/cli.js",
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./dist/cli.d.ts",
+      "default": "./dist/cli.js"
+    },
+    "./src": {
+      "types": "./src/cli.ts",
+      "default": "./src/cli.ts"
+    },
+    "./src/*": {
+      "types": "./src/*.ts",
+      "default": "./src/*.ts"
+    }
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist *.tsbuildinfo && tsc && chmod +x dist/cli.js",
+    "prepublishOnly": "pnpm build",
+    "dev": "doppler run --mount .dev.vars --mount-format env -- wrangler dev --port 8790",
+    "deployment": "tsc --noEmit && wrangler deploy --env preview",
+    "deployment:production": "tsc --noEmit && wrangler deploy",
+    "secrets:prod": "doppler run -c production --mount .env.prod --mount-format env -- wrangler secret bulk .env.prod"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^0.16.1",
+    "@clack/prompts": "^0.10.0",
+    "@notionhq/client": "^5.13.0",
+    "errore": "workspace:^",
+    "goke": "^6.3.0",
+    "spiceflow": "1.18.0-rsc.11"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260130.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "5.8.3",
+    "wrangler": "^4.61.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/remorses/kimaki",
+    "directory": "openplexer"
+  },
+  "homepage": "https://openplexer.com",
+  "bugs": "https://github.com/remorses/kimaki/issues",
+  "keywords": [
+    "notion",
+    "coding-sessions",
+    "acp",
+    "opencode",
+    "claude",
+    "session-tracker"
+  ]
+}

@@ -1,0 +1,122 @@
+// Spawn an ACP agent (opencode or claude) as a child process and connect
+// as a client via stdio. Uses @agentclientprotocol/sdk for the protocol.
+
+import { spawn } from 'node:child_process'
+import { Writable, Readable } from 'node:stream'
+import {
+  ClientSideConnection,
+  ndJsonStream,
+  type Agent,
+  type Client,
+  type SessionInfo,
+} from '@agentclientprotocol/sdk'
+
+function nodeToWebWritable(nodeStream: Writable): WritableStream<Uint8Array> {
+  return new WritableStream<Uint8Array>({
+    write(chunk) {
+      return new Promise<void>((resolve, reject) => {
+        nodeStream.write(Buffer.from(chunk), (err) => {
+          if (err) {
+            reject(err)
+          } else {
+            resolve()
+          }
+        })
+      })
+    },
+  })
+}
+
+function nodeToWebReadable(nodeStream: Readable): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      nodeStream.on('data', (chunk: Buffer) => {
+        controller.enqueue(new Uint8Array(chunk))
+      })
+      nodeStream.on('end', () => {
+        controller.close()
+      })
+      nodeStream.on('error', (err) => {
+        controller.error(err)
+      })
+    },
+  })
+}
+
+// Minimal Client implementation — we only need session listing,
+// not file ops or permissions. requestPermission and sessionUpdate
+// are required by the Client interface.
+class MinimalClient implements Client {
+  async requestPermission() {
+    return { outcome: { outcome: 'cancelled' as const } }
+  }
+  async sessionUpdate() {}
+  async readTextFile() {
+    return { content: '' }
+  }
+  async writeTextFile() {
+    return {}
+  }
+}
+
+export type AcpConnection = {
+  connection: ClientSideConnection
+  kill: () => void
+}
+
+export async function connectAcp({
+  client,
+}: {
+  client: 'opencode' | 'claude'
+}): Promise<AcpConnection> {
+  const cmd = client === 'opencode' ? 'opencode' : 'claude'
+  const args = ['acp']
+
+  const child = spawn(cmd, args, {
+    stdio: ['pipe', 'pipe', 'inherit'],
+  })
+
+  const stream = ndJsonStream(
+    nodeToWebWritable(child.stdin!),
+    nodeToWebReadable(child.stdout!),
+  )
+
+  const connection = new ClientSideConnection((_agent: Agent) => {
+    return new MinimalClient()
+  }, stream)
+
+  await connection.initialize({
+    protocolVersion: 1,
+    clientCapabilities: {},
+  })
+
+  return {
+    connection,
+    kill: () => {
+      child.kill()
+    },
+  }
+}
+
+export async function listAllSessions({
+  connection,
+}: {
+  connection: ClientSideConnection
+}): Promise<SessionInfo[]> {
+  const sessions: SessionInfo[] = []
+  let cursor: string | undefined
+
+  // Paginate through all sessions
+  while (true) {
+    const response = await connection.listSessions({
+      ...(cursor ? { cursor } : {}),
+    })
+    sessions.push(...response.sessions)
+    if (!response.nextCursor) {
+      break
+    }
+    cursor = response.nextCursor
+  }
+
+  return sessions
+}
