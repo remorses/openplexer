@@ -89,7 +89,7 @@ export async function getRootPages({ notion }: { notion: Client }): Promise<Root
 
 /** Build the canonical set of properties for a board database.
  *  Used both at creation and to ensure existing boards have all expected props. */
-function buildBoardProperties({ clients }: { clients: AcpClient[] }): Record<string, unknown> {
+function buildBoardProperties({ clients, assigneeField }: { clients: AcpClient[]; assigneeField?: boolean }): Record<string, unknown> {
   const hasOpencode = clients.includes('opencode')
 
   const properties: Record<string, unknown> = {
@@ -103,7 +103,6 @@ function buildBoardProperties({ clients }: { clients: AcpClient[] }): Record<str
     'Share URL': { type: 'url', url: {} },
     Resume: { type: 'rich_text', rich_text: {} },
     'Session ID': { type: 'rich_text', rich_text: {} },
-    Assignee: { type: 'people', people: {} },
     Folder: { type: 'rich_text', rich_text: {} },
     Created: { type: 'date', date: {} },
     Updated: { type: 'date', date: {} },
@@ -112,6 +111,14 @@ function buildBoardProperties({ clients }: { clients: AcpClient[] }): Record<str
       select: { options: ACTIVITY_OPTIONS },
     },
     Model: { type: 'rich_text', rich_text: {} },
+  }
+
+  // Assignee (people property) is opt-in because Notion sends a notification
+  // to the assigned user on every page create and there is no API way to
+  // suppress it. Users must manually set the property notifications to "None"
+  // in the Notion UI to avoid spam.
+  if (assigneeField) {
+    properties['Assignee'] = { type: 'people', people: {} }
   }
 
   if (hasOpencode) {
@@ -125,12 +132,14 @@ export async function createBoardDatabase({
   notion,
   pageId,
   clients,
+  assigneeField,
 }: {
   notion: Client
   pageId: string
   clients: AcpClient[]
+  assigneeField?: boolean
 }): Promise<CreateDatabaseResult> {
-  const properties = buildBoardProperties({ clients })
+  const properties = buildBoardProperties({ clients, assigneeField })
 
   const database = await notion.databases.create({
     parent: { type: 'page_id', page_id: pageId },
@@ -211,10 +220,12 @@ export async function ensureBoardSchema({
   notion,
   databaseId,
   clients,
+  assigneeField,
 }: {
   notion: Client
   databaseId: string
   clients: AcpClient[]
+  assigneeField?: boolean
 }): Promise<void> {
   const database = await notion.databases.retrieve({ database_id: databaseId }) as DatabaseObjectResponse
   const dataSourceId = database.data_sources?.[0]?.id
@@ -222,7 +233,7 @@ export async function ensureBoardSchema({
 
   // Send all expected properties — Notion merges, so existing ones are untouched
   // and missing ones get created.
-  const properties = buildBoardProperties({ clients })
+  const properties = buildBoardProperties({ clients, assigneeField })
 
   // Remove 'Name' (title property) — can't be added via update, it already exists
   delete properties['Name']
@@ -323,15 +334,6 @@ export async function createExamplePage({
           rich_text: [
             { type: 'text', text: { content: 'Kimaki' }, annotations: { bold: true } },
             { type: 'text', text: { content: ' — Link to the Discord thread (if using kimaki).' } },
-          ],
-        },
-      },
-      {
-        type: 'bulleted_list_item',
-        bulleted_list_item: {
-          rich_text: [
-            { type: 'text', text: { content: 'Assignee' }, annotations: { bold: true } },
-            { type: 'text', text: { content: ' — The Notion user who authorized the integration.' } },
           ],
         },
       },

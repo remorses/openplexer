@@ -46,10 +46,17 @@ const cli = goke('openplexer')
 // Default command: start sync if boards exist, otherwise run connect wizard
 cli
   .command('', 'Sync coding sessions to Notion boards')
-  .action(async () => {
+  .option('--assignee', 'Add an Assignee (people) property to the board and auto-assign session pages to your Notion user. Disabled by default because Notion sends a notification on every assignment and there is no API way to suppress it. If you enable this, set the Assignee property notifications to "None" in the Notion UI to avoid spam.')
+  .action(async (options: { assignee?: boolean }) => {
     const config = readConfig()
+    if (options.assignee != null) {
+      if (config) {
+        config.assigneeField = options.assignee
+        writeConfig(config)
+      }
+    }
     if (!config || config.boards.length === 0) {
-      await connectFlow()
+      await connectFlow({ assigneeField: options.assignee })
       return
     }
     await startDaemon(config)
@@ -212,10 +219,13 @@ cli.parse()
 
 // --- Connect wizard ---
 
-async function connectFlow(): Promise<void> {
+async function connectFlow({ assigneeField }: { assigneeField?: boolean } = {}): Promise<void> {
   intro('openplexer — connect a Notion board')
 
   const config = readConfig() || ({ clients: [], boards: [] } as OpenplexerConfig)
+  if (assigneeField != null) {
+    config.assigneeField = assigneeField
+  }
 
   // Step 1: Choose ACP clients (only on first run)
   if (config.clients.length === 0) {
@@ -390,7 +400,7 @@ async function connectFlow(): Promise<void> {
 
   // Step 6: Create database and seed with an example page
   s.start('Creating board database...')
-  const { databaseId } = await createBoardDatabase({ notion, pageId, clients: config.clients })
+  const { databaseId } = await createBoardDatabase({ notion, pageId, clients: config.clients, assigneeField: config.assigneeField })
   await createExamplePage({ notion, databaseId })
   s.stop('Board database created')
 

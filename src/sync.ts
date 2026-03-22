@@ -85,6 +85,7 @@ export async function startSyncLoop({
       notion: createNotionClient({ token: board.notionToken }),
       databaseId: board.notionDatabaseId,
       clients: config.clients,
+      assigneeField: config.assigneeField,
     }).catch((e) => {
       if (e instanceof APIResponseError && e.status === 401)
         return new NotionUnauthorizedError({ board: board.notionWorkspaceName, cause: e })
@@ -103,6 +104,7 @@ export async function startSyncLoop({
         notion: createNotionClient({ token: board.notionToken }),
         databaseId: board.notionDatabaseId,
         clients: config.clients,
+        assigneeField: config.assigneeField,
       }).catch((e) => new NotionApiError({ operation: 'ensure schema (retry)', cause: e }))
       if (retryResult instanceof Error) {
         console.error(`Schema ensure failed after refresh for ${board.notionWorkspaceName}:`, retryResult.message)
@@ -168,7 +170,7 @@ async function syncOnce({
 
   let dirty = false
   for (const board of config.boards) {
-    const result = await syncBoard({ board, sessions: topLevelSessions, repoIcons: config.repoIcons })
+    const result = await syncBoard({ board, sessions: topLevelSessions, repoIcons: config.repoIcons, assigneeField: config.assigneeField })
 
     if (result instanceof NotionUnauthorizedError) {
       console.warn(`Token expired for ${board.notionWorkspaceName}, refreshing...`)
@@ -178,7 +180,7 @@ async function syncOnce({
         continue
       }
       // Retry once with the new token
-      const retryResult = await syncBoard({ board, sessions: topLevelSessions, repoIcons: config.repoIcons })
+      const retryResult = await syncBoard({ board, sessions: topLevelSessions, repoIcons: config.repoIcons, assigneeField: config.assigneeField })
       if (retryResult instanceof Error) {
         console.error(`Sync failed after token refresh for ${board.notionWorkspaceName}:`, retryResult.message)
         continue
@@ -202,10 +204,12 @@ async function syncBoard({
   board,
   sessions,
   repoIcons,
+  assigneeField,
 }: {
   board: OpenplexerBoard
   sessions: TaggedSession[]
   repoIcons?: Record<string, string>
+  assigneeField?: boolean
 }): Promise<NotionUnauthorizedError | boolean> {
   const notion = createNotionClient({ token: board.notionToken })
   let dirty = false
@@ -361,7 +365,7 @@ async function syncBoard({
           branch,
           branchUrl,
           resumeCommand,
-          assigneeId: board.notionUserId,
+          assigneeId: assigneeField ? board.notionUserId : undefined,
           folder,
           shareUrl,
           kimakiUrl: kimakiUrl || undefined,

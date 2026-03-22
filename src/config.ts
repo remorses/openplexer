@@ -53,6 +53,11 @@ export type OpenplexerConfig = {
   boards: OpenplexerBoard[]
   /** Per-repo emoji icon overrides (slug → emoji). Applies globally across all boards. */
   repoIcons?: Record<string, string>
+  /** When true, add an Assignee (people) property to the board and set it on
+   *  new session pages. Disabled by default because Notion sends a notification
+   *  to the assigned user on every page create and there is no API-level way to
+   *  suppress it. Enable with `openplexer --assignee`. */
+  assigneeField?: boolean
 }
 
 const CONFIG_DIR = path.join(os.homedir(), '.openplexer')
