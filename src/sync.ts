@@ -2,7 +2,7 @@
 // Runs every 5 seconds, creates new pages for untracked sessions,
 // updates existing ones when title/updatedAt changes.
 
-import type { OpenplexerBoard, OpenplexerConfig, AcpClient, SyncedSession } from './config.ts'
+import type { OpenplexerBoard, OpenplexerConfig, AcpClient } from './config.ts'
 import { writeConfig } from './config.ts'
 import { type AgentConnection, type SessionWithParent } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
@@ -14,7 +14,10 @@ import {
 } from './notion.ts'
 import { resolveRepoIcon } from './emoji.ts'
 import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import os from 'node:os'
+
+const execFileAsync = promisify(execFile)
 
 const SYNC_INTERVAL_MS = 5000
 
@@ -36,14 +39,7 @@ type TaggedSession = SessionWithParent & {
   getShareUrl?: (sessionId: string) => Promise<string | undefined>
 }
 
-/** Resolve a SyncedSession from the union type (handles legacy plain-string format).
- *  Old configs store just the Notion pageId string; those are auto-migrated on
- *  first tick — the empty title/updatedAt will mismatch, triggering one update. */
-function resolveCached(entry: string | SyncedSession | undefined): SyncedSession | undefined {
-  if (!entry) return undefined
-  if (typeof entry === 'string') return { pageId: entry, title: '', updatedAt: '' }
-  return entry
-}
+
 
 export async function startSyncLoop({
   config,
@@ -150,13 +146,14 @@ async function syncBoard({
       }
     }
     // Use cached repo identity — git remote doesn't change during daemon lifetime
-    let repo = repoCache.get(session.cwd)
-    if (!repo) {
+    const repo = repoCache.get(session.cwd) ?? await (async () => {
       const resolved = await getRepoInfo({ cwd: session.cwd })
-      if (!resolved) continue
-      repoCache.set(session.cwd, { slug: resolved.slug, url: resolved.url })
-      repo = { slug: resolved.slug, url: resolved.url }
-    }
+      if (!resolved) return undefined
+      const entry = { slug: resolved.slug, url: resolved.url }
+      repoCache.set(session.cwd!, entry)
+      return entry
+    })()
+    if (!repo) continue
     // If trackedRepos is empty, track all repos
     if (board.trackedRepos.length > 0 && !board.trackedRepos.includes(repo.slug)) {
       continue
@@ -170,7 +167,7 @@ async function syncBoard({
 
   // Sync each session
   for (const { session, repoSlug, repoUrl } of filteredSessions) {
-    const cached = resolveCached(board.syncedSessions[session.sessionId])
+    const cached = board.syncedSessions[session.sessionId]
 
     // Use the same normalized title for both comparison and caching to avoid
     // false positives on untitled sessions (create caches fallback, update compares raw)
@@ -184,18 +181,16 @@ async function syncBoard({
 
       // Retry kimaki URL for sessions that were created without one
       // (race condition: openplexer sees the session before kimaki writes the thread association)
-      let kimakiUrl: string | undefined
-      if (session.source === 'opencode') {
-        const state = sessionKimakiState.get(session.sessionId)
-        const shouldRetry = state && !state.hasKimakiUrl
-          && (Date.now() - state.createdAt) < KIMAKI_RETRY_WINDOW_MS
-        if (shouldRetry) {
-          kimakiUrl = await getKimakiDiscordUrl(session.sessionId)
-          if (kimakiUrl) {
-            state.hasKimakiUrl = true
-          }
-        }
-      }
+      const kimakiKey = `${board.notionDatabaseId}:${session.sessionId}`
+      const kimakiUrl = await (async (): Promise<string | undefined> => {
+        if (session.source !== 'opencode') return undefined
+        const state = sessionKimakiState.get(kimakiKey)
+        if (!state || state.hasKimakiUrl) return undefined
+        if (Date.now() - state.createdAt >= KIMAKI_RETRY_WINDOW_MS) return undefined
+        const url = await getKimakiDiscordUrl(session.sessionId)
+        if (url) state.hasKimakiUrl = true
+        return url
+      })()
 
       // Compare with cached state — skip Notion API call if nothing changed
       const newUpdatedAt = session.updatedAt || ''
@@ -299,25 +294,21 @@ async function syncBoard({
   return dirty
 }
 
-// Try to get kimaki Discord URL for a session via kimaki CLI
-async function getKimakiDiscordUrl(sessionId: string): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    execFile(
-      'kimaki',
-      ['session', 'discord-url', '--json', sessionId],
-      { timeout: 3000 },
-      (error, stdout) => {
-        if (error) {
-          resolve(undefined)
-          return
-        }
-        try {
-          const data = JSON.parse(stdout.trim()) as { url?: string }
-          resolve(data.url)
-        } catch {
-          resolve(undefined)
-        }
-      },
-    )
-  })
+// Try to get kimaki Discord URL for a session via kimaki CLI.
+// Returns undefined when kimaki isn't installed, the session has no thread,
+// or the command/parse fails — all expected cases during normal operation.
+async function getKimakiDiscordUrl(sessionId: string) {
+  const result = await execFileAsync(
+    'kimaki',
+    ['session', 'discord-url', '--json', sessionId],
+    { timeout: 3000 },
+  ).catch(() => undefined)
+  if (!result) return undefined
+
+  try {
+    return (JSON.parse(result.stdout.trim()) as { url?: string }).url
+  } catch {
+    console.warn(`kimaki discord-url: invalid JSON for session ${sessionId}`)
+    return undefined
+  }
 }

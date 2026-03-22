@@ -7,8 +7,7 @@ import path from 'node:path'
 import os from 'node:os'
 
 /** Cached state for a synced session — used for change detection to avoid
- *  redundant Notion API calls. Backward-compatible: old configs store just
- *  the pageId string, which is auto-migrated on first sync tick. */
+ *  redundant Notion API calls. */
 export type SyncedSession = {
   pageId: string
   title: string
@@ -33,8 +32,8 @@ export type OpenplexerBoard = {
   notionDatabaseId: string
   /** Git repo URLs to track (e.g. ["owner/repo1", "owner/repo2"]) */
   trackedRepos: string[]
-  /** Map of ACP session ID → synced state (or legacy plain pageId string) */
-  syncedSessions: Record<string, string | SyncedSession>
+  /** Map of ACP session ID → synced state */
+  syncedSessions: Record<string, SyncedSession>
   /** ISO timestamp of when this board was connected. Only sessions
    *  created or last updated after this time are synced. */
   connectedAt: string
