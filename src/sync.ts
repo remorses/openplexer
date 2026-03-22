@@ -12,6 +12,7 @@ import {
   createSessionPage,
   updateSessionPage,
   ensureBoardSchema,
+  ensureBoardView,
   rateLimitedCall,
 } from './notion.ts'
 import { resolveRepoIcon } from './emoji.ts'
@@ -130,6 +131,15 @@ export async function startSyncLoop({
 
     if (schemaResult instanceof Error) {
       console.error(`Schema ensure failed for ${board.notionWorkspaceName}:`, schemaResult.message)
+    }
+
+    // Ensure board view shows all status groups (including empty ones)
+    const viewResult = await ensureBoardView({
+      notion: createNotionClient({ token: board.notionToken }),
+      databaseId: board.notionDatabaseId,
+    }).catch((e) => new NotionApiError({ operation: 'ensure board view', cause: e }))
+    if (viewResult instanceof Error) {
+      console.error(`Board view update failed for ${board.notionWorkspaceName}:`, viewResult.message)
     }
   }
 
