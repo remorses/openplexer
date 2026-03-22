@@ -286,7 +286,9 @@ async function syncBoard({
 
     // Use the same normalized title for both comparison and caching to avoid
     // false positives on untitled sessions (create caches fallback, update compares raw)
-    const title = session.title || `Session ${session.sessionId.slice(0, 8)}`
+    const title = (session.title || `Session ${session.sessionId.slice(0, 8)}`)
+      .replace(/\s+/g, ' ')
+      .trim()
 
     // Resolve share URL: use cached value from listSessions, or auto-share via SDK
     const shareUrl = session.shareUrl ?? await session.getShareUrl?.(session.sessionId)

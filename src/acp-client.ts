@@ -153,11 +153,17 @@ async function connectOpencode(): Promise<AgentConnection> {
         const first = userMessages[0]
         if (!first) return undefined
 
-        // Extract text from TextPart entries
+        // Extract text from TextPart entries, skipping synthetic parts
+        // (system-injected context like file annotations, not actual user input)
         const textParts = first.parts
           .filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text')
+          .filter((p) => !(p as { synthetic?: boolean }).synthetic)
           .map((p) => p.text)
-        const prompt = textParts.join('\n').trim()
+        const prompt = textParts.join('\n')
+          .replace(/\n{2,}/g, '\n')   // collapse double+ newlines into single
+          .replace(/[^\S\n]+/g, ' ')   // collapse consecutive whitespace (preserve \n)
+          .trim()
+          .slice(0, 500)               // truncate to 500 chars
 
         const info = first.info as { model?: { modelID?: string } }
         const model = info.model?.modelID?.trim() || undefined
