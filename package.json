@@ -1,6 +1,6 @@
 {
   "name": "openplexer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Track coding sessions in Notion boards. Syncs ACP sessions from OpenCode and Claude Code to collaborative Notion databases.",
   "type": "module",
   "main": "./dist/cli.js",

@@ -1,5 +1,19 @@
 # openplexer
 
+## 0.2.0
+
+1. **Fixed session syncing for opencode** — sessions now sync from all projects, not just one. Previously opencode's ACP protocol scoped sessions to a single project directory, returning ~85 stale sessions. Now openplexer spawns `opencode serve` and uses the `/experimental/session` endpoint with the `@opencode-ai/sdk` v2 client to list all sessions globally.
+
+2. **Board is now embedded inline and defaults to Board (kanban) view** — the Notion database is created with `is_inline: true` so it appears directly in the page instead of as a subpage in the sidebar. The default Table view is replaced with a Board view grouped by Status.
+
+3. **Board is pre-seeded with an example card** — after onboarding, a "Sessions will appear here automatically" card appears in the In Progress column explaining what each property means (Status, Repo, Branch, Resume, Discord, Assignee). Archive it once real sessions start syncing.
+
+4. **Notion page link shown in browser and CLI after onboarding** — the OAuth success page shows an "Open in Notion" button linking directly to your board. The CLI also prints the Notion URL after setup completes.
+
+5. **Board status columns trimmed to 3** — Not Started (for your own todos), In Progress (where synced sessions land), Done.
+
+6. **Sync logging improved** — when a session is added, the CLI prints the title, repo, and a clickable Notion URL. Errors are caught per-session so one failure doesn't abort the entire sync tick.
+
 ## 0.1.0
 
 1. **Sync ACP coding sessions to Notion board databases** — openplexer runs as a background daemon on your machine and automatically tracks sessions from OpenCode and/or Claude Code in a Notion kanban board:
