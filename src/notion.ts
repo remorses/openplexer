@@ -523,25 +523,14 @@ export async function createSessionPage({
   if (model) {
     properties['Model'] = { rich_text: [{ text: { content: model } }] }
   }
-
-  // Build page content blocks — callout with first user prompt
-  const children: Parameters<Client['blocks']['children']['append']>[0]['children'] = []
   if (firstPrompt) {
-    children.push({
-      type: 'callout' as const,
-      callout: {
-        icon: { type: 'emoji' as const, emoji: '💬' as const },
-        color: 'gray_background' as const,
-        rich_text: splitRichText(firstPrompt),
-      },
-    })
+    properties['Prompt'] = { rich_text: splitRichText(firstPrompt) }
   }
 
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
     ...(icon && { icon: { type: 'emoji' as const, emoji: icon } }),
     properties: properties as Parameters<Client['pages']['create']>[0]['properties'],
-    ...(children.length > 0 && { children }),
   })
 
   return page.id
