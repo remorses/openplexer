@@ -13,6 +13,7 @@ import {
   rateLimitedCall,
 } from './notion.ts'
 import { execFile } from 'node:child_process'
+import os from 'node:os'
 
 const SYNC_INTERVAL_MS = 5000
 
@@ -157,8 +158,13 @@ async function syncBoard({
         return `claude --resume ${session.sessionId}`
       })()
 
-      // Try to get Discord URL if kimaki is available
-      const discordUrl = await getKimakiDiscordUrl(session.sessionId)
+      // Try to get kimaki Discord URL (only for opencode sessions)
+      const kimakiUrl = session.source === 'opencode'
+        ? await getKimakiDiscordUrl(session.sessionId)
+        : undefined
+
+      // Shorten folder path by replacing homedir with ~
+      const folder = (session.cwd || '').replace(os.homedir(), '~')
 
       try {
         const pageId = await rateLimitedCall(() => {
@@ -169,11 +175,13 @@ async function syncBoard({
             sessionId: session.sessionId,
             status: 'In Progress',
             repoSlug,
+            branch,
             branchUrl,
             resumeCommand,
             assigneeId: board.notionUserId,
-            folder: session.cwd || '',
-            discordUrl: discordUrl || undefined,
+            folder,
+            kimakiUrl: kimakiUrl || undefined,
+            createdAt: new Date().toISOString(),
             updatedAt: session.updatedAt || undefined,
           })
         })
@@ -188,7 +196,7 @@ async function syncBoard({
   }
 }
 
-// Try to get Discord URL for a session via kimaki CLI
+// Try to get kimaki Discord URL for a session via kimaki CLI
 async function getKimakiDiscordUrl(sessionId: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     execFile(

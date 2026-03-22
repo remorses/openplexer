@@ -309,7 +309,7 @@ async function connectFlow(): Promise<void> {
 
   // Step 6: Create database and seed with an example page
   s.start('Creating board database...')
-  const { databaseId } = await createBoardDatabase({ notion, pageId })
+  const { databaseId } = await createBoardDatabase({ notion, pageId, clients: config.clients })
   await createExamplePage({ notion, databaseId })
   s.stop('Board database created')
 

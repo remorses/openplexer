@@ -2,6 +2,7 @@
 // Creates board databases, creates/updates session pages.
 
 import { Client } from '@notionhq/client'
+import type { AcpClient } from './config.ts'
 
 export const STATUS_OPTIONS = [
   { name: 'Not Started', color: 'default' as const },
@@ -82,31 +83,41 @@ export async function getRootPages({ notion }: { notion: Client }): Promise<Root
 export async function createBoardDatabase({
   notion,
   pageId,
+  clients,
 }: {
   notion: Client
   pageId: string
+  clients: AcpClient[]
 }): Promise<CreateDatabaseResult> {
+  const hasOpencode = clients.includes('opencode')
+
+  const properties: Record<string, unknown> = {
+    Name: { type: 'title', title: {} },
+    Status: {
+      type: 'select',
+      select: { options: STATUS_OPTIONS },
+    },
+    Repo: { type: 'select', select: { options: [] } },
+    Branch: { type: 'rich_text', rich_text: {} },
+    'Share URL': { type: 'url', url: {} },
+    Resume: { type: 'rich_text', rich_text: {} },
+    'Session ID': { type: 'rich_text', rich_text: {} },
+    Assignee: { type: 'people', people: {} },
+    Folder: { type: 'rich_text', rich_text: {} },
+    Created: { type: 'date', date: {} },
+    Updated: { type: 'date', date: {} },
+  }
+
+  if (hasOpencode) {
+    properties['Kimaki'] = { type: 'url', url: {} }
+  }
+
   const database = await notion.databases.create({
     parent: { type: 'page_id', page_id: pageId },
     is_inline: true,
     title: [{ text: { content: 'openplexer - Coding Sessions' } }],
     initial_data_source: {
-      properties: {
-        Name: { type: 'title', title: {} },
-        Status: {
-          type: 'select',
-          select: { options: STATUS_OPTIONS },
-        },
-        Repo: { type: 'select', select: { options: [] } },
-        Branch: { type: 'url', url: {} },
-        'Share URL': { type: 'url', url: {} },
-        Resume: { type: 'rich_text', rich_text: {} },
-        'Session ID': { type: 'rich_text', rich_text: {} },
-        Assignee: { type: 'people', people: {} },
-        Folder: { type: 'rich_text', rich_text: {} },
-        Discord: { type: 'url', url: {} },
-        Updated: { type: 'date', date: {} },
-      },
+      properties: properties as Parameters<Client['databases']['create']>[0]['initial_data_source'] extends { properties?: infer P } ? P : never,
     },
   })
 
@@ -117,12 +128,23 @@ export async function createBoardDatabase({
     ? database.data_sources?.[0]?.id
     : undefined
   if (dataSourceId) {
-    // Retrieve the data source to get the Status property ID for group_by
+    // Retrieve the data source to get property IDs for group_by and visibility
     const dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId })
-    const statusPropertyId = 'properties' in dataSource
-      ? Object.entries(dataSource.properties as Record<string, { id: string; type: string }>)
-          .find(([name]) => name === 'Status')?.[1]?.id
-      : undefined
+    const dsProps = 'properties' in dataSource
+      ? (dataSource.properties as Record<string, { id: string; type: string }>)
+      : {}
+
+    const propId = (name: string) =>
+      Object.entries(dsProps).find(([n]) => n === name)?.[1]?.id
+
+    const statusPropertyId = propId('Status')
+
+    // Properties visible on board cards
+    const visibleOnCard = new Set(['Status', 'Repo', 'Updated', 'Created'])
+    const propertiesConfig = Object.entries(dsProps).map(([name, { id }]) => ({
+      property_id: id,
+      visible: visibleOnCard.has(name),
+    }))
 
     // List existing views (should contain the auto-created Table view)
     const existingViews = await notion.views.list({ database_id: database.id })
@@ -143,6 +165,7 @@ export async function createBoardDatabase({
             sort: { type: 'manual' as const },
             hide_empty_groups: false,
           },
+          properties: propertiesConfig,
         },
       }),
     })
@@ -170,11 +193,12 @@ export async function createExamplePage({
     parent: { database_id: databaseId },
     properties: {
       Name: { title: [{ text: { content: 'Sessions will appear here automatically' } }] },
-      Status: { select: { name: 'In Progress' } },
+      Status: { select: { name: 'Not Started' } },
       'Session ID': { rich_text: [{ text: { content: 'example' } }] },
       Repo: { select: { name: 'owner/repo' } },
+      Branch: { rich_text: [{ text: { content: 'main' } }] },
       Resume: { rich_text: [{ text: { content: 'opencode --session <id>' } }] },
-      Folder: { rich_text: [{ text: { content: '/path/to/project' } }] },
+      Folder: { rich_text: [{ text: { content: '~/projects/repo' } }] },
     } as Parameters<Client['pages']['create']>[0]['properties'],
     children: [
       {
@@ -218,7 +242,7 @@ export async function createExamplePage({
         bulleted_list_item: {
           rich_text: [
             { type: 'text', text: { content: 'Branch' }, annotations: { bold: true } },
-            { type: 'text', text: { content: ' — Link to the git branch on GitHub.' } },
+            { type: 'text', text: { content: ' — The git branch name, clickable to open on GitHub.' } },
           ],
         },
       },
@@ -244,7 +268,7 @@ export async function createExamplePage({
         type: 'bulleted_list_item',
         bulleted_list_item: {
           rich_text: [
-            { type: 'text', text: { content: 'Discord' }, annotations: { bold: true } },
+            { type: 'text', text: { content: 'Kimaki' }, annotations: { bold: true } },
             { type: 'text', text: { content: ' — Link to the Discord thread (if using kimaki).' } },
           ],
         },
@@ -255,6 +279,15 @@ export async function createExamplePage({
           rich_text: [
             { type: 'text', text: { content: 'Assignee' }, annotations: { bold: true } },
             { type: 'text', text: { content: ' — The Notion user who authorized the integration.' } },
+          ],
+        },
+      },
+      {
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            { type: 'text', text: { content: 'Created / Updated' }, annotations: { bold: true } },
+            { type: 'text', text: { content: ' — When the session was first seen and last active.' } },
           ],
         },
       },
@@ -284,12 +317,14 @@ export async function createSessionPage({
   sessionId,
   status,
   repoSlug,
+  branch,
   branchUrl,
   shareUrl,
   resumeCommand,
   assigneeId,
   folder,
-  discordUrl,
+  kimakiUrl,
+  createdAt,
   updatedAt,
 }: {
   notion: Client
@@ -298,12 +333,14 @@ export async function createSessionPage({
   sessionId: string
   status: string
   repoSlug: string
+  branch?: string
   branchUrl?: string
   shareUrl?: string
   resumeCommand: string
   assigneeId?: string
   folder: string
-  discordUrl?: string
+  kimakiUrl?: string
+  createdAt?: string
   updatedAt?: string
 }): Promise<string> {
   const properties: Record<string, unknown> = {
@@ -315,8 +352,13 @@ export async function createSessionPage({
     Folder: { rich_text: [{ text: { content: folder } }] },
   }
 
-  if (branchUrl) {
-    properties['Branch'] = { url: branchUrl }
+  if (branch) {
+    // Rich text with optional clickable link to GitHub branch
+    const textObj: { content: string; link?: { url: string } } = { content: branch }
+    if (branchUrl) {
+      textObj.link = { url: branchUrl }
+    }
+    properties['Branch'] = { rich_text: [{ text: textObj }] }
   }
   if (shareUrl) {
     properties['Share URL'] = { url: shareUrl }
@@ -324,8 +366,11 @@ export async function createSessionPage({
   if (assigneeId) {
     properties['Assignee'] = { people: [{ id: assigneeId }] }
   }
-  if (discordUrl) {
-    properties['Discord'] = { url: discordUrl }
+  if (kimakiUrl) {
+    properties['Kimaki'] = { url: kimakiUrl }
+  }
+  if (createdAt) {
+    properties['Created'] = { date: { start: createdAt } }
   }
   if (updatedAt) {
     properties['Updated'] = { date: { start: updatedAt } }
