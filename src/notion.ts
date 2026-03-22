@@ -168,12 +168,17 @@ export async function createBoardDatabase({
     const existingViews = await notion.views.list({ database_id: database.id })
     const tableViewIds = existingViews.results.map((v) => v.id)
 
-    // Create the Board view, grouped by Status
+    // Create the Board view, grouped by Status, sorted by Created descending
+    // so latest sessions appear at the top of each column
     await notion.views.create({
       database_id: database.id,
       data_source_id: dataSourceId,
       name: 'Board',
       type: 'board',
+      // TODO: SDK types ViewSortRequest as Record<string, never> — may be a bug
+      // or the create endpoint may genuinely not support property sorts. If this
+      // fails at runtime, move the sort to a views.update() call after creation.
+      sorts: [{ property: 'Created', direction: 'descending' }] as any,
       ...(statusPropertyId && {
         configuration: {
           type: 'board' as const,

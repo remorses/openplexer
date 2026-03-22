@@ -106,6 +106,9 @@ async function connectOpencode(): Promise<AgentConnection> {
         }
 
         for (const s of result.data) {
+          // Skip archived sessions
+          if (s.time.archived) continue
+
           sessions.push({
             sessionId: s.id,
             cwd: s.directory,
