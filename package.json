@@ -42,17 +42,20 @@
     "@opencode-ai/sdk": "^1.2.27",
     "@zed-industries/claude-agent-acp": "^0.22.2",
     "@zed-industries/codex-acp": "^0.10.0",
+    "drizzle-orm": "^0.45.1",
     "errore": "*",
     "goke": "^6.3.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260130.0",
     "@types/node": "^22.0.0",
+    "drizzle-kit": "^0.31.10",
     "spiceflow": "1.18.0-rsc.11",
     "tsx": "^4.21.0",
     "typescript": "5.8.3",
     "vitest": "^4.1.0",
-    "wrangler": "^4.61.1"
+    "wrangler": "^4.61.1",
+    "zod": "^4.3.6"
   },
   "repository": {
     "type": "git",
