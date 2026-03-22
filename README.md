@@ -116,17 +116,30 @@ Every session card in Notion has these fields:
 |---|---|---|
 | **Name** | Title | Session title from the agent |
 | **Status** | Select | `In Progress`, `Done`, `Needs Attention`, `Ignored`, `Not Started` |
+| **Activity** | Select | `Running` (agent generating), `Idle` (waiting for user). OpenCode only |
 | **Repo** | Select | GitHub repo as `owner/repo` |
-| **Branch** | URL | Link to the branch on GitHub |
+| **Branch** | Text | Link to the branch on GitHub |
+| **Model** | Text | AI model used (e.g. `claude-sonnet-4-20250514`) |
 | **Share URL** | URL | Public share link (OpenCode `/share`) |
 | **Resume** | Text | CLI command to resume the session |
 | **Assignee** | People | Notion user who authorized the integration |
 | **Folder** | Text | Local filesystem path |
-| **Discord** | URL | Discord thread link (if using kimaki) |
+| **Kimaki** | URL | Discord thread link (if using kimaki). OpenCode only |
+| **Created** | Date | When the session was first synced |
 | **Updated** | Date | Last update timestamp from the agent |
 | **Session ID** | Text | Internal ACP session identifier |
 
 **Status** is the only field you manage manually. Everything else is synced automatically. Move cards between columns as you triage — mark sessions as done when you're finished, flag ones that need attention, ignore ones you don't care about.
+
+### Silencing assignee notifications
+
+By default, Notion sends you a notification every time openplexer creates a new session card because it sets you as the Assignee. The Notion API doesn't support suppressing these notifications, but you can disable them in the Notion UI:
+
+1. Open your openplexer board in Notion
+2. Click the **Assignee** property header (or any card's Assignee field, then the gear icon)
+3. Under **Notify**, select **None**
+
+This stops all notifications from the Assignee property while keeping the assignment visible on cards.
 
 **Resume** gives you the exact command to pick up a session:
 
