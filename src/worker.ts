@@ -4,6 +4,7 @@
 // the CLI to poll. Same pattern as kimaki's gateway onboarding.
 
 import { Spiceflow } from 'spiceflow'
+import { Client, APIResponseError } from '@notionhq/client'
 import type { Env } from './env.ts'
 
 const REDIRECT_PATH = '/auth/callback'
@@ -83,37 +84,27 @@ const app = new Spiceflow()
       const env = state.env
       const redirectUri = new URL(REDIRECT_PATH, url.origin).toString()
 
-      // Exchange code for tokens
-      const encoded = btoa(`${env.NOTION_CLIENT_ID}:${env.NOTION_CLIENT_SECRET}`)
-      const tokenResponse = await fetch('https://api.notion.com/v1/oauth/token', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          Authorization: `Basic ${encoded}`,
-        },
-        body: JSON.stringify({
+      // Exchange code for tokens via Notion SDK
+      let tokenData: Awaited<ReturnType<Client['oauth']['token']>>
+      try {
+        const notion = new Client()
+        tokenData = await notion.oauth.token({
+          client_id: env.NOTION_CLIENT_ID,
+          client_secret: env.NOTION_CLIENT_SECRET,
           grant_type: 'authorization_code',
           code,
           redirect_uri: redirectUri,
-        }),
-      })
-
-      if (!tokenResponse.ok) {
-        const errorBody = await tokenResponse.text()
-        console.error('Notion token exchange failed:', errorBody)
-        return new Response(`Notion authorization failed: ${errorBody}`, { status: 500 })
+        })
+      } catch (e) {
+        if (e instanceof APIResponseError) {
+          console.error('Notion token exchange failed:', e.message)
+          return new Response(`Notion authorization failed: ${e.message}`, { status: e.status })
+        }
+        throw e
       }
 
-      const tokenData = (await tokenResponse.json()) as {
-        access_token: string
-        refresh_token: string
-        token_type: string
-        bot_id: string
-        workspace_id: string
-        workspace_name: string
-        owner: { type: string; user?: { id: string; name: string } }
-        duplicated_template_id?: string | null
+      if (!tokenData.refresh_token) {
+        return new Response('Notion did not return a refresh token', { status: 502 })
       }
 
       // Build Notion page URL from duplicated template ID (if present)
@@ -122,6 +113,10 @@ const app = new Spiceflow()
         ? `https://notion.so/${duplicatedTemplateId.replace(/-/g, '')}`
         : null
 
+      // Extract user info from owner
+      const ownerUser = tokenData.owner.type === 'user' ? tokenData.owner.user : undefined
+      const notionUserName = ownerUser && 'name' in ownerUser ? ownerUser.name : undefined
+
       // Store tokens in KV with 5 minute TTL
       const kvPayload = {
         accessToken: tokenData.access_token,
@@ -129,8 +124,8 @@ const app = new Spiceflow()
         botId: tokenData.bot_id,
         workspaceId: tokenData.workspace_id,
         workspaceName: tokenData.workspace_name,
-        notionUserId: tokenData.owner?.user?.id,
-        notionUserName: tokenData.owner?.user?.name,
+        notionUserId: ownerUser?.id,
+        notionUserName,
         duplicatedTemplateId,
       }
 
@@ -254,29 +249,25 @@ const app = new Spiceflow()
       }
 
       const env = state.env
-      const encoded = btoa(`${env.NOTION_CLIENT_ID}:${env.NOTION_CLIENT_SECRET}`)
-      const tokenResponse = await fetch('https://api.notion.com/v1/oauth/token', {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          Authorization: `Basic ${encoded}`,
-        },
-        body: JSON.stringify({
+      let tokenData: Awaited<ReturnType<Client['oauth']['token']>>
+      try {
+        const notion = new Client()
+        tokenData = await notion.oauth.token({
+          client_id: env.NOTION_CLIENT_ID,
+          client_secret: env.NOTION_CLIENT_SECRET,
           grant_type: 'refresh_token',
           refresh_token: body.refreshToken,
-        }),
-      })
-
-      if (!tokenResponse.ok) {
-        const errorBody = await tokenResponse.text()
-        console.error('Notion token refresh failed:', errorBody)
-        return new Response(`Token refresh failed: ${errorBody}`, { status: tokenResponse.status })
+        })
+      } catch (e) {
+        if (e instanceof APIResponseError) {
+          console.error('Notion token refresh failed:', e.message)
+          return new Response(`Token refresh failed: ${e.message}`, { status: e.status })
+        }
+        throw e
       }
 
-      const tokenData = (await tokenResponse.json()) as {
-        access_token: string
-        refresh_token: string
+      if (!tokenData.refresh_token) {
+        return new Response('Notion did not return a refresh token', { status: 502 })
       }
 
       return new Response(
