@@ -21,20 +21,20 @@ After a week you have 40+ sessions scattered across your machine with no way to 
 openplexer runs as a background daemon on your machine. It connects to your coding agents via ACP (Agent Client Protocol), discovers all your sessions, and syncs them to a Notion kanban board — automatically, every 5 seconds.
 
 ```
-┌──────────────┐                     ┌──────────────────┐
-│  OpenCode    │◄── ACP (stdio) ────►│                  │
-│  Claude Code │◄── ACP (stdio) ────►│   openplexer     │
-│  Codex       │◄── ACP (stdio) ────►│   (background)   │
-└──────────────┘                     │                  │
-                                     │  syncs every 5s  │
-                                     └────────┬─────────┘
-                                              │
-                                              │ Notion API
-                                              ▼
-                                     ┌──────────────────┐
-                                     │  Notion Board    │
-                                     │  (shared kanban) │
-                                     └──────────────────┘
+┌──────────────┐                     ┌────────────────────────┐
+│  OpenCode    │◄── ACP (stdio) ────►│                        │
+│  Claude Code │◄── ACP (stdio) ────►│      openplexer        │
+│  Codex       │◄── ACP (stdio) ────►│      (background)      │
+└──────────────┘                     │                        │
+                                     │  syncs every 5 seconds │
+                                     └───────────┬────────────┘
+                                                 │
+                                                 │ Notion API
+                                                 ▼
+                                     ┌────────────────────────┐
+                                     │      Notion Board      │
+                                     │     (shared kanban)    │
+                                     └────────────────────────┘
 ```
 
 Each session becomes a card on the board. You can see at a glance:
