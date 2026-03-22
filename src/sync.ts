@@ -458,8 +458,14 @@ async function getKimakiDiscordUrl(sessionId: string) {
   ).catch(() => undefined)
   if (!result) return undefined
 
+  // kimaki may print log lines before the JSON object — find the line starting with '{'
+  const jsonLine = result.stdout.split('\n').find((line) => line.trimStart().startsWith('{'))
+  if (!jsonLine) {
+    console.warn(`kimaki discord-url: no JSON line found for session ${sessionId}`)
+    return undefined
+  }
   const parsed = errore.try({
-    try: () => JSON.parse(result.stdout.trim()) as { url?: string },
+    try: () => JSON.parse(jsonLine) as { url?: string },
     catch: (e) => new Error('Invalid JSON', { cause: e }),
   })
   if (parsed instanceof Error) {
