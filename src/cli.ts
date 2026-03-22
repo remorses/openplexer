@@ -23,6 +23,7 @@ import { exec } from 'node:child_process'
 import { readConfig, writeConfig, type OpenplexerConfig, type OpenplexerBoard, type AcpClient } from './config.ts'
 import { connectAgent, type AgentConnection } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
+import { getRepoEmoji } from './emoji.ts'
 import { createNotionClient, createBoardDatabase, createExamplePage, getRootPages } from './notion.ts'
 import { evictExistingInstance, getLockPort, startLockServer } from './lock.ts'
 import { startSyncLoop } from './sync.ts'
@@ -131,6 +132,77 @@ cli
   .action(async () => {
     await disableStartupService()
     console.log('Unregistered from login startup.')
+  })
+
+// Icon commands: view and override per-repo emoji icons
+cli.command('icon', 'List repo icon assignments').action(async () => {
+  const config = readConfig()
+  if (!config || config.boards.length === 0) {
+    console.log('No boards configured. Run `openplexer connect` first.')
+    return
+  }
+
+  // Collect all known repo slugs from tracked repos and synced sessions
+  const slugs = new Set<string>()
+  for (const board of config.boards) {
+    for (const slug of board.trackedRepos) {
+      slugs.add(slug)
+    }
+  }
+
+  // Also include any repos that have overrides
+  if (config.repoIcons) {
+    for (const slug of Object.keys(config.repoIcons)) {
+      slugs.add(slug)
+    }
+  }
+
+  if (slugs.size === 0) {
+    console.log('No tracked repos found. Icons are assigned automatically when sessions sync.')
+    return
+  }
+
+  console.log('Repo icon assignments:\n')
+  for (const slug of [...slugs].sort()) {
+    const override = config.repoIcons?.[slug]
+    const auto = getRepoEmoji(slug)
+    if (override) {
+      console.log(`  ${override} ${slug}  (override, auto: ${auto})`)
+    } else {
+      console.log(`  ${auto} ${slug}`)
+    }
+  }
+})
+
+cli
+  .command('icon set <repo> <emoji>', 'Set a custom emoji icon for a repo')
+  .action(async (repo: string, emoji: string) => {
+    const config = readConfig()
+    if (!config) {
+      console.log('No config found. Run `openplexer connect` first.')
+      return
+    }
+    if (!config.repoIcons) {
+      config.repoIcons = {}
+    }
+    config.repoIcons[repo] = emoji
+    writeConfig(config)
+    console.log(`Set icon for ${repo}: ${emoji}`)
+  })
+
+cli
+  .command('icon reset <repo>', 'Reset repo icon to auto-generated')
+  .action(async (repo: string) => {
+    const config = readConfig()
+    if (!config) {
+      console.log('No config found. Run `openplexer connect` first.')
+      return
+    }
+    if (config.repoIcons?.[repo]) {
+      delete config.repoIcons[repo]
+      writeConfig(config)
+    }
+    console.log(`Reset icon for ${repo}: ${getRepoEmoji(repo)}`)
   })
 
 cli.parse()

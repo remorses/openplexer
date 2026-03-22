@@ -191,6 +191,7 @@ export async function createExamplePage({
 }): Promise<string> {
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
+    icon: { type: 'emoji' as const, emoji: '📋' },
     properties: {
       Name: { title: [{ text: { content: 'Sessions will appear here automatically' } }] },
       Status: { select: { name: 'Not Started' } },
@@ -326,6 +327,7 @@ export async function createSessionPage({
   kimakiUrl,
   createdAt,
   updatedAt,
+  icon,
 }: {
   notion: Client
   databaseId: string
@@ -342,6 +344,8 @@ export async function createSessionPage({
   kimakiUrl?: string
   createdAt?: string
   updatedAt?: string
+  /** Emoji icon for the page (deterministic per-repo) */
+  icon?: string
 }): Promise<string> {
   const properties: Record<string, unknown> = {
     Name: { title: [{ text: { content: title } }] },
@@ -378,6 +382,7 @@ export async function createSessionPage({
 
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
+    ...(icon && { icon: { type: 'emoji' as const, emoji: icon } }),
     properties: properties as Parameters<Client['pages']['create']>[0]['properties'],
   })
 

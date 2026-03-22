@@ -37,6 +37,8 @@ export type OpenplexerConfig = {
   clients: AcpClient[]
   /** Multiple boards this CLI syncs to */
   boards: OpenplexerBoard[]
+  /** Per-repo emoji icon overrides (slug → emoji). Applies globally across all boards. */
+  repoIcons?: Record<string, string>
 }
 
 const CONFIG_DIR = path.join(os.homedir(), '.openplexer')

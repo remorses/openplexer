@@ -12,6 +12,7 @@ import {
   updateSessionPage,
   rateLimitedCall,
 } from './notion.ts'
+import { resolveRepoIcon } from './emoji.ts'
 import { execFile } from 'node:child_process'
 import os from 'node:os'
 
@@ -72,7 +73,7 @@ async function syncOnce({
   const topLevelSessions = sessions.filter((s) => !s.parentId)
 
   for (const board of config.boards) {
-    await syncBoard({ board, sessions: topLevelSessions })
+    await syncBoard({ board, sessions: topLevelSessions, repoIcons: config.repoIcons })
   }
 
   // Persist updated syncedSessions
@@ -82,9 +83,11 @@ async function syncOnce({
 async function syncBoard({
   board,
   sessions,
+  repoIcons,
 }: {
   board: OpenplexerBoard
   sessions: TaggedSession[]
+  repoIcons?: Record<string, string>
 }): Promise<void> {
   const notion = createNotionClient({ token: board.notionToken })
 
@@ -183,6 +186,7 @@ async function syncBoard({
             kimakiUrl: kimakiUrl || undefined,
             createdAt: new Date().toISOString(),
             updatedAt: session.updatedAt || undefined,
+            icon: resolveRepoIcon({ slug: repoSlug, repoIcons }),
           })
         })
 
