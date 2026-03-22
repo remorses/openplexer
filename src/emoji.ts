@@ -52,16 +52,21 @@ export function getRepoEmoji(slug: string): string {
 
 /**
  * Resolve the icon for a repo: user override takes priority, then hash-based.
+ * When branch is provided, it's included in the hash so different branches
+ * on the same repo get different emojis.
  */
 export function resolveRepoIcon({
   slug,
+  branch,
   repoIcons,
 }: {
   slug: string
+  branch?: string
   repoIcons?: Record<string, string>
 }): string {
   if (repoIcons?.[slug]) {
     return repoIcons[slug]
   }
-  return getRepoEmoji(slug)
+  const hashKey = branch ? `${slug}:${branch}` : slug
+  return getRepoEmoji(hashKey)
 }

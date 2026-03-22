@@ -273,7 +273,7 @@ async function syncBoard({
             kimakiUrl: kimakiUrl || undefined,
             createdAt: new Date().toISOString(),
             updatedAt: session.updatedAt || undefined,
-            icon: resolveRepoIcon({ slug: repoSlug, repoIcons }),
+            icon: resolveRepoIcon({ slug: repoSlug, branch, repoIcons }),
           })
         })
 
@@ -283,7 +283,7 @@ async function syncBoard({
           updatedAt: session.updatedAt ?? '',
           shareUrl: shareUrl ?? '',
         }
-        sessionKimakiState.set(session.sessionId, {
+        sessionKimakiState.set(`${board.notionDatabaseId}:${session.sessionId}`, {
           createdAt: Date.now(),
           hasKimakiUrl: !!kimakiUrl,
         })

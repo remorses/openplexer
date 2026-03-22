@@ -72,4 +72,29 @@ describe('resolveRepoIcon', () => {
     const emoji = resolveRepoIcon({ slug: 'owner/repo', repoIcons: undefined })
     expect(emoji).toBe(getRepoEmoji('owner/repo'))
   })
+
+  it('different branches get different emojis', () => {
+    const main = resolveRepoIcon({ slug: 'owner/repo', branch: 'main' })
+    const feature = resolveRepoIcon({ slug: 'owner/repo', branch: 'feature/auth' })
+    expect(main).not.toBe(feature)
+  })
+
+  it('includes branch in hash key', () => {
+    const withBranch = resolveRepoIcon({ slug: 'owner/repo', branch: 'develop' })
+    expect(withBranch).toBe(getRepoEmoji('owner/repo:develop'))
+  })
+
+  it('without branch falls back to slug-only hash', () => {
+    const noBranch = resolveRepoIcon({ slug: 'owner/repo' })
+    expect(noBranch).toBe(getRepoEmoji('owner/repo'))
+  })
+
+  it('override still takes priority over branch hash', () => {
+    const emoji = resolveRepoIcon({
+      slug: 'owner/repo',
+      branch: 'main',
+      repoIcons: { 'owner/repo': '🚀' },
+    })
+    expect(emoji).toBe('🚀')
+  })
 })
