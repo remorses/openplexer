@@ -107,6 +107,7 @@ const app = new Spiceflow()
 
       const tokenData = (await tokenResponse.json()) as {
         access_token: string
+        refresh_token: string
         token_type: string
         bot_id: string
         workspace_id: string
@@ -124,6 +125,7 @@ const app = new Spiceflow()
       // Store tokens in KV with 5 minute TTL
       const kvPayload = {
         accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
         botId: tokenData.bot_id,
         workspaceId: tokenData.workspace_id,
         workspaceName: tokenData.workspace_name,
@@ -237,6 +239,53 @@ const app = new Spiceflow()
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
+    },
+  })
+
+  // Step 4: CLI calls this to refresh an expired access token.
+  // Keeps NOTION_CLIENT_ID / NOTION_CLIENT_SECRET server-side.
+  .route({
+    method: 'POST',
+    path: '/auth/refresh',
+    async handler({ request, state }) {
+      const body = (await request.json()) as { refreshToken?: string }
+      if (!body.refreshToken) {
+        return new Response('Missing refreshToken', { status: 400 })
+      }
+
+      const env = state.env
+      const encoded = btoa(`${env.NOTION_CLIENT_ID}:${env.NOTION_CLIENT_SECRET}`)
+      const tokenResponse = await fetch('https://api.notion.com/v1/oauth/token', {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Basic ${encoded}`,
+        },
+        body: JSON.stringify({
+          grant_type: 'refresh_token',
+          refresh_token: body.refreshToken,
+        }),
+      })
+
+      if (!tokenResponse.ok) {
+        const errorBody = await tokenResponse.text()
+        console.error('Notion token refresh failed:', errorBody)
+        return new Response(`Token refresh failed: ${errorBody}`, { status: tokenResponse.status })
+      }
+
+      const tokenData = (await tokenResponse.json()) as {
+        access_token: string
+        refresh_token: string
+      }
+
+      return new Response(
+        JSON.stringify({
+          accessToken: tokenData.access_token,
+          refreshToken: tokenData.refresh_token,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )
     },
   })
 

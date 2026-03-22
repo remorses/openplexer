@@ -308,6 +308,7 @@ async function connectFlow(): Promise<void> {
   // Poll for token
   type AuthResult = {
     accessToken: string
+    refreshToken: string
     botId: string
     workspaceId: string
     workspaceName: string
@@ -392,6 +393,7 @@ async function connectFlow(): Promise<void> {
   // Step 7: Save to config
   const board: OpenplexerBoard = {
     notionToken: authResult.accessToken,
+    notionRefreshToken: authResult.refreshToken,
     notionUserId: authResult.notionUserId || '',
     notionUserName: authResult.notionUserName || '',
     notionWorkspaceId: authResult.workspaceId,
@@ -438,6 +440,7 @@ async function startDaemon(config: OpenplexerConfig): Promise<void> {
   startLockServer({ port })
 
   console.log(`openplexer daemon started (PID ${process.pid}, port ${port})`)
+  console.log(`To add a new Notion board, run: openplexer connect`)
 
   const connections: AgentConnection[] = []
   for (const client of config.clients) {

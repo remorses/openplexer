@@ -21,6 +21,8 @@ export type SyncedSession = {
 export type OpenplexerBoard = {
   /** Notion OAuth access token */
   notionToken: string
+  /** Notion OAuth refresh token — used to obtain a new access token when it expires */
+  notionRefreshToken: string
   /** Notion user ID of this machine's user */
   notionUserId: string
   /** Notion user name */
