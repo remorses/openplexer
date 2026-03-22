@@ -6,6 +6,16 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
+/** Cached state for a synced session — used for change detection to avoid
+ *  redundant Notion API calls. Backward-compatible: old configs store just
+ *  the pageId string, which is auto-migrated on first sync tick. */
+export type SyncedSession = {
+  pageId: string
+  title: string
+  updatedAt: string
+  shareUrl?: string
+}
+
 export type OpenplexerBoard = {
   /** Notion OAuth access token */
   notionToken: string
@@ -23,8 +33,8 @@ export type OpenplexerBoard = {
   notionDatabaseId: string
   /** Git repo URLs to track (e.g. ["owner/repo1", "owner/repo2"]) */
   trackedRepos: string[]
-  /** Map of ACP session ID → Notion page ID (already synced) */
-  syncedSessions: Record<string, string>
+  /** Map of ACP session ID → synced state (or legacy plain pageId string) */
+  syncedSessions: Record<string, string | SyncedSession>
   /** ISO timestamp of when this board was connected. Only sessions
    *  created or last updated after this time are synced. */
   connectedAt: string
