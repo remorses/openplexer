@@ -33,8 +33,11 @@ import {
   isStartupServiceEnabled,
   getServiceLocationDescription,
 } from './startup-service.ts'
+import { createSpiceflowFetch } from 'spiceflow/client'
+import type { App } from './worker.ts'
 
 const OPENPLEXER_URL = 'https://openplexer.com'
+const apiFetch = createSpiceflowFetch<App>(OPENPLEXER_URL)
 
 process.title = 'openplexer'
 
@@ -395,6 +398,25 @@ async function connectFlow(): Promise<void> {
   const notionPageUrl = `https://notion.so/${pageId.replace(/-/g, '')}`
   log.success(`Board created: ${notionPageUrl}`)
 
+  // Persist board server-side so the Worker knows about it
+  const connectedAt = new Date().toISOString()
+  const saveBoardResult = await apiFetch('/api/boards', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${authResult.refreshToken}` },
+    body: {
+      notionDatabaseId: databaseId,
+      notionPageId: pageId,
+      trackedRepos,
+      connectedAt,
+    },
+  })
+
+  if (saveBoardResult instanceof Error) {
+    log.warn('Could not sync board to server (will retry on next connect)')
+  } else {
+    log.info('Board synced to server')
+  }
+
   // Step 7: Save to config
   const board: OpenplexerBoard = {
     notionToken: authResult.accessToken,
@@ -407,7 +429,7 @@ async function connectFlow(): Promise<void> {
     notionDatabaseId: databaseId,
     trackedRepos,
     syncedSessions: {},
-    connectedAt: new Date().toISOString(),
+    connectedAt,
   }
 
   config.boards.push(board)

@@ -19,6 +19,8 @@ import { APIResponseError } from '@notionhq/client'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import os from 'node:os'
+import { createSpiceflowFetch } from 'spiceflow/client'
+import type { App } from './worker.ts'
 
 class NotionUnauthorizedError extends errore.createTaggedError({
   name: 'NotionUnauthorizedError',
@@ -44,6 +46,7 @@ const execFileAsync = promisify(execFile)
 
 const SYNC_INTERVAL_MS = 5000
 const OPENPLEXER_URL = 'https://openplexer.com'
+const apiFetch = createSpiceflowFetch<App>(OPENPLEXER_URL)
 
 // Track sessions that were created without a kimaki URL so we can retry
 // on subsequent sync ticks. We stop retrying after KIMAKI_RETRY_WINDOW_MS
@@ -416,24 +419,19 @@ async function refreshBoardToken({
     return new TokenRefreshError({ board: board.notionWorkspaceName, reason: 'no refresh token saved' })
   }
 
-  const resp = await fetch(`${OPENPLEXER_URL}/auth/refresh`, {
+  const data = await apiFetch('/auth/refresh', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken: board.notionRefreshToken }),
+    body: { refreshToken: board.notionRefreshToken },
     signal: AbortSignal.timeout(10_000),
-  }).catch((e) => new TokenRefreshError({ board: board.notionWorkspaceName, reason: 'network error', cause: e }))
+  })
 
-  if (resp instanceof Error) return resp
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '')
-    return new TokenRefreshError({ board: board.notionWorkspaceName, reason: `HTTP ${resp.status}: ${body}` })
+  if (data instanceof Error) {
+    const err = data as Error & { status?: number; value?: unknown }
+    const detail = err.status != null
+      ? `HTTP ${err.status}: ${String(err.value ?? err.message)}`
+      : err.message
+    return new TokenRefreshError({ board: board.notionWorkspaceName, reason: detail, cause: data })
   }
-
-  const data = await (resp.json() as Promise<{ accessToken: string; refreshToken: string }>).catch(
-    (e) => new TokenRefreshError({ board: board.notionWorkspaceName, reason: 'invalid response', cause: e }),
-  )
-  if (data instanceof Error) return data
 
   if (!data.accessToken || !data.refreshToken) {
     return new TokenRefreshError({ board: board.notionWorkspaceName, reason: 'server returned empty tokens' })
