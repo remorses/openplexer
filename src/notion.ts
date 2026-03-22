@@ -4,7 +4,6 @@
 import { Client } from '@notionhq/client'
 import type {
   DatabaseObjectResponse,
-  DataSourceObjectResponse,
   PageObjectResponse,
 } from '@notionhq/client/build/src/api-endpoints.js'
 import type { AcpClient } from './config.ts'
@@ -95,8 +94,8 @@ function buildBoardProperties({ clients, assigneeField }: { clients: AcpClient[]
   const properties: Record<string, unknown> = {
     Name: { type: 'title', title: {} },
     Status: {
-      type: 'select',
-      select: { options: STATUS_OPTIONS },
+      type: 'status',
+      status: { options: STATUS_OPTIONS },
     },
     Repo: { type: 'select', select: { options: [] } },
     Branch: { type: 'rich_text', rich_text: {} },
@@ -111,6 +110,7 @@ function buildBoardProperties({ clients, assigneeField }: { clients: AcpClient[]
       select: { options: ACTIVITY_OPTIONS },
     },
     Model: { type: 'rich_text', rich_text: {} },
+    Prompt: { type: 'rich_text', rich_text: {} },
   }
 
   // Assignee (people property) is opt-in because Notion sends a notification
@@ -153,53 +153,24 @@ export async function createBoardDatabase({
   // Database is created with a default Table view. Create a Board view
   // grouped by Status so sessions show as a kanban board, then delete the
   // default Table view so Board becomes the default.
+  // Create a Board view without explicit group_by configuration.
+  // Notion auto-groups boards by the first status property, which is
+  // exactly our Status column. This avoids the property-ID mismatch
+  // that occurs when passing dataSources.retrieve IDs to views.create.
+  // See: https://developers.notion.com/guides/data-apis/workspace-setup-for-public-integrations
   const db = database as DatabaseObjectResponse
   const dataSourceId = db.data_sources?.[0]?.id
   if (dataSourceId) {
-    // Retrieve the data source to get property IDs for group_by and visibility
-    const dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId }) as DataSourceObjectResponse
-    const dsProps = dataSource.properties as Record<string, { id: string; type: string }>
-
-    const propId = (name: string) =>
-      Object.entries(dsProps).find(([n]) => n === name)?.[1]?.id
-
-    const statusPropertyId = propId('Status')
-
-    // Properties visible on board cards
-    // Status is the board grouping property — Notion hides it from cards by default
-    const visibleOnCard = new Set(['Repo', 'Updated', 'Created', 'Activity', 'Model'])
-    const propertiesConfig = Object.entries(dsProps).map(([name, { id }]) => ({
-      property_id: id,
-      visible: visibleOnCard.has(name),
-    }))
-
     // List existing views (should contain the auto-created Table view)
     const existingViews = await notion.views.list({ database_id: database.id })
     const tableViewIds = existingViews.results.map((v) => v.id)
 
-    // Create the Board view, grouped by Status, sorted by Created descending
-    // so latest sessions appear at the top of each column
     await notion.views.create({
       database_id: database.id,
       data_source_id: dataSourceId,
       name: 'Board',
       type: 'board',
-      // TODO: SDK types ViewSortRequest as Record<string, never> — may be a bug
-      // or the create endpoint may genuinely not support property sorts. If this
-      // fails at runtime, move the sort to a views.update() call after creation.
       sorts: [{ property: 'Created', direction: 'descending' }] as any,
-      ...(statusPropertyId && {
-        configuration: {
-          type: 'board' as const,
-          group_by: {
-            type: 'select' as const,
-            property_id: statusPropertyId,
-            sort: { type: 'manual' as const },
-            hide_empty_groups: false,
-          },
-          properties: propertiesConfig,
-        },
-      }),
     })
 
     // Delete the default Table view(s) so Board is the only (and default) view
@@ -211,6 +182,111 @@ export async function createBoardDatabase({
   }
 
   return { databaseId: database.id }
+}
+
+/** Ensure the board view shows all status groups and uses Repo as sub-group.
+ *  Called once per board at daemon start. Retrieves the board view's
+ *  auto-assigned config and ensures:
+ *  - hide_empty_groups is false (all status columns visible)
+ *  - sub_group_by is set to the Repo property
+ *
+ *  For group_by we reuse the view's own auto-assigned config (safe IDs).
+ *  For sub_group_by we need the Repo property's view-internal ID. We get
+ *  it by comparing the view's group_by.property_id (Status) against the
+ *  data source's Status ID — if they match, data source IDs = view IDs
+ *  and we can use the data source's Repo ID directly. */
+export async function ensureBoardView({
+  notion,
+  databaseId,
+}: {
+  notion: Client
+  databaseId: string
+}): Promise<void> {
+  type GroupByConfig = {
+    type: string
+    property_id: string
+    hide_empty_groups?: boolean
+    [key: string]: unknown
+  }
+
+  type ViewResponse = {
+    id: string
+    type: string
+    configuration?: {
+      type: string
+      group_by?: GroupByConfig
+      sub_group_by?: GroupByConfig | null
+    }
+  }
+
+  // List view IDs, then retrieve each to find the board view
+  const viewList = await notion.views.list({ database_id: databaseId })
+  let boardView: ViewResponse | undefined
+  for (const ref of viewList.results) {
+    const view = await notion.views.retrieve({ view_id: ref.id }) as ViewResponse
+    if (view.type === 'board') {
+      boardView = view
+      break
+    }
+  }
+  if (!boardView) return
+
+  const groupBy = boardView.configuration?.group_by
+  if (!groupBy) return
+
+  // Get data source property IDs and verify they match view IDs by
+  // comparing the Status property (used by group_by) across both.
+  const database = await notion.databases.retrieve({ database_id: databaseId }) as DatabaseObjectResponse
+  const dataSourceId = database.data_sources?.[0]?.id
+  if (!dataSourceId) return
+
+  const dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId })
+  const dsProps = (dataSource as { properties: Record<string, { id: string; type: string }> }).properties
+  const dsPropId = (name: string) => Object.entries(dsProps).find(([n]) => n === name)?.[1]?.id
+
+  const dsStatusId = dsPropId('Status')
+  const dsRepoId = dsPropId('Repo')
+
+  // Verify data source IDs match view IDs by checking Status
+  // (the view auto-assigned its group_by to Status)
+  const idsMatch = dsStatusId && dsStatusId === groupBy.property_id
+  if (!idsMatch || !dsRepoId) {
+    // IDs don't match — can only safely update group_by using the view's own config
+    if (groupBy.hide_empty_groups !== false) {
+      await notion.views.update({
+        view_id: boardView.id,
+        configuration: {
+          type: 'board' as const,
+          group_by: { ...groupBy, hide_empty_groups: false },
+        } as any,
+      })
+    }
+    return
+  }
+
+  // IDs match — safe to use data source IDs for sub_group_by
+  const needsGroupByUpdate = groupBy.hide_empty_groups !== false
+  const currentSubGroupProp = boardView.configuration?.sub_group_by?.property_id
+  const needsSubGroupUpdate = currentSubGroupProp !== dsRepoId
+
+  if (!needsGroupByUpdate && !needsSubGroupUpdate) return
+
+  await notion.views.update({
+    view_id: boardView.id,
+    configuration: {
+      type: 'board' as const,
+      group_by: {
+        ...groupBy,
+        hide_empty_groups: false,
+      },
+      sub_group_by: {
+        type: 'select' as const,
+        property_id: dsRepoId,
+        sort: { type: 'manual' as const },
+        hide_empty_groups: true,
+      },
+    } as any,
+  })
 }
 
 /** Ensure an existing board database has all expected properties.
@@ -257,7 +333,7 @@ export async function createExamplePage({
     icon: { type: 'emoji' as const, emoji: '📋' },
     properties: {
       Name: { title: [{ text: { content: 'Sessions will appear here automatically' } }] },
-      Status: { select: { name: 'Not Started' } },
+      Status: { status: { name: 'Not Started' } },
       'Session ID': { rich_text: [{ text: { content: 'example' } }] },
       Repo: { select: { name: 'owner/repo' } },
       Branch: { rich_text: [{ text: { content: 'main' } }] },
@@ -406,12 +482,12 @@ export async function createSessionPage({
   icon?: string
   /** Model ID used for this session (e.g. "claude-sonnet-4-20250514") */
   model?: string
-  /** First user prompt text — shown as a callout block in the page body */
+  /** First user prompt text — stored in the Prompt property */
   firstPrompt?: string
 }): Promise<string> {
   const properties: Record<string, unknown> = {
     Name: { title: [{ text: { content: title } }] },
-    Status: { select: { name: status } },
+    Status: { status: { name: status } },
     'Session ID': { rich_text: [{ text: { content: sessionId } }] },
     Repo: { select: { name: repoSlug } },
     Resume: { rich_text: [{ text: { content: resumeCommand } }] },
