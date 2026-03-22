@@ -358,31 +358,41 @@ async function connectFlow({ assigneeField }: { assigneeField?: boolean } = {}):
 
   s.stop(`Connected to ${authResult.workspaceName}`)
 
-  // Step 5: Select Notion page from root pages
+  // Step 5: Select Notion page
+  // If the user authorized with a template, Notion duplicates a page and
+  // returns its ID. Use it directly — it's the page the user intended.
+  // Otherwise fall back to listing root pages and asking the user to pick.
   const notion = createNotionClient({ token: authResult.accessToken })
-  s.start('Fetching Notion pages...')
-  const rootPages = await getRootPages({ notion })
-  s.stop(`Found ${rootPages.length} root pages`)
-
-  if (rootPages.length === 0) {
-    log.error('No root pages found in your Notion workspace. Create a page first.')
-    process.exit(1)
-  }
-
-  // Filter out pages already used by other boards
-  const usedPageIds = new Set(config.boards.map((b) => b.notionPageId))
-  const availablePages = rootPages.filter((p) => !usedPageIds.has(p.id))
-
-  if (availablePages.length === 0) {
-    log.error('All root pages are already connected to boards.')
-    process.exit(1)
-  }
 
   const pageId: string = await (async () => {
+    if (authResult.duplicatedTemplateId) {
+      log.info(`Using template page created during authorization`)
+      return authResult.duplicatedTemplateId
+    }
+
+    s.start('Fetching Notion pages...')
+    const rootPages = await getRootPages({ notion })
+    s.stop(`Found ${rootPages.length} root pages`)
+
+    if (rootPages.length === 0) {
+      log.error('No root pages found in your Notion workspace. Create a page first.')
+      process.exit(1)
+    }
+
+    // Filter out pages already used by other boards
+    const usedPageIds = new Set(config.boards.map((b) => b.notionPageId))
+    const availablePages = rootPages.filter((p) => !usedPageIds.has(p.id))
+
+    if (availablePages.length === 0) {
+      log.error('All root pages are already connected to boards.')
+      process.exit(1)
+    }
+
     if (availablePages.length === 1) {
       log.info(`Auto-selected page: ${availablePages[0].icon} ${availablePages[0].title}`)
       return availablePages[0].id
     }
+
     const pageChoice = await select({
       message: 'Which Notion page should hold the board?',
       options: availablePages.map((p) => ({
@@ -477,6 +487,10 @@ async function startDaemon(config: OpenplexerConfig): Promise<void> {
   startLockServer({ port })
 
   console.log(`openplexer daemon started (PID ${process.pid}, port ${port})`)
+  for (const board of config.boards) {
+    const url = `https://notion.so/${board.notionPageId.replace(/-/g, '')}`
+    console.log(`Board: ${board.notionWorkspaceName} → ${url}`)
+  }
   console.log(`To add a new Notion board, run: openplexer connect`)
 
   const connections: AgentConnection[] = []
