@@ -67,6 +67,22 @@ type TaggedSession = Session & {
   getFirstMessage?: (sessionId: string) => Promise<{ prompt?: string; model?: string } | undefined>
 }
 
+const TITLE_GRACE_PERIOD_MS = 5 * 60 * 1000 // 5 minutes
+
+/** Detect sessions whose title hasn't been generated yet.
+ *  Returns true if the title looks like a placeholder AND the session
+ *  is recent enough that title generation might still be in progress.
+ *  After the grace period we sync anyway to avoid losing sessions
+ *  where title generation failed permanently. */
+function hasPendingTitle(session: Session): boolean {
+  const title = session.title?.trim()
+  const isPlaceholder = !title || title.startsWith('New session')
+  if (!isPlaceholder) return false
+
+  const updatedAtMs = session.updatedAt ? new Date(session.updatedAt).getTime() : Date.now()
+  return Date.now() - updatedAtMs < TITLE_GRACE_PERIOD_MS
+}
+
 
 
 export async function startSyncLoop({
@@ -329,6 +345,11 @@ async function syncBoard({
       dirty = true
     } else {
       // --- New session: create page ---
+      // Skip sessions with pending titles — wait for async title generation.
+      // After the grace period, sync anyway to avoid losing sessions permanently.
+      if (hasPendingTitle(session)) {
+        continue
+      }
       // Resolve branch fresh (not cached — can change between sessions in same cwd)
       const freshRepo = await getRepoInfo({ cwd: session.cwd! })
       const branch = freshRepo?.branch ?? 'main'
