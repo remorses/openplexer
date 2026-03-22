@@ -10,6 +10,7 @@ import {
   createNotionClient,
   createSessionPage,
   updateSessionPage,
+  ensureBoardSchema,
   rateLimitedCall,
 } from './notion.ts'
 import { resolveRepoIcon } from './emoji.ts'
@@ -37,6 +38,7 @@ const repoCache = new Map<string, { slug: string; url: string }>()
 type TaggedSession = Session & {
   source: AcpClient
   getShareUrl?: (sessionId: string) => Promise<string | undefined>
+  getFirstMessage?: (sessionId: string) => Promise<{ prompt?: string; model?: string } | undefined>
 }
 
 
@@ -49,6 +51,17 @@ export async function startSyncLoop({
   acpConnections: AgentConnection[]
 }): Promise<void> {
   console.log(`Syncing ${config.boards.length} board(s) every ${SYNC_INTERVAL_MS / 1000}s`)
+
+  // Ensure all boards have the latest property schema (adds missing props
+  // like Activity to boards created before that feature existed)
+  for (const board of config.boards) {
+    try {
+      const notion = createNotionClient({ token: board.notionToken })
+      await ensureBoardSchema({ notion, databaseId: board.notionDatabaseId, clients: config.clients })
+    } catch (err) {
+      console.error(`Schema ensure failed for ${board.notionWorkspaceName}:`, err instanceof Error ? err.message : err)
+    }
+  }
 
   const tick = async () => {
     try {
@@ -89,7 +102,7 @@ async function syncOnce({
       for (const session of clientSessions) {
         if (!seenIds.has(session.sessionId)) {
           seenIds.add(session.sessionId)
-          sessions.push({ ...session, source: agent.client, getShareUrl: agent.getShareUrl })
+          sessions.push({ ...session, source: agent.client, getShareUrl: agent.getShareUrl, getFirstMessage: agent.getFirstMessage })
         }
       }
     } catch (err) {
@@ -225,6 +238,7 @@ async function syncBoard({
           updatedAt: newUpdatedAt,
           shareUrl: shareUrl ?? cached.shareUrl,
           activity: newActivity ?? cached.activity,
+          model: cached.model,
         }
         dirty = true
       } catch (err) {
@@ -254,6 +268,9 @@ async function syncBoard({
       // Shorten folder path by replacing homedir with ~
       const folder = (session.cwd || '').replace(os.homedir(), '~')
 
+      // Fetch first user message (prompt + model) from agent — only available for opencode
+      const firstMsg = await session.getFirstMessage?.(session.sessionId).catch(() => undefined)
+
       try {
         const pageId = await rateLimitedCall(() => {
           return createSessionPage({
@@ -274,6 +291,8 @@ async function syncBoard({
             updatedAt: session.updatedAt || undefined,
             activity: session.activity,
             icon: resolveRepoIcon({ slug: repoSlug, branch, repoIcons }),
+            model: firstMsg?.model,
+            firstPrompt: firstMsg?.prompt,
           })
         })
 
@@ -283,6 +302,7 @@ async function syncBoard({
           updatedAt: session.updatedAt ?? '',
           shareUrl: shareUrl ?? '',
           activity: session.activity,
+          model: firstMsg?.model,
         }
         sessionKimakiState.set(`${board.notionDatabaseId}:${session.sessionId}`, {
           createdAt: Date.now(),

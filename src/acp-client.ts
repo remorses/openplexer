@@ -35,10 +35,19 @@ export type Session = SessionInfo & {
   activity?: Activity
 }
 
+export type FirstMessageInfo = {
+  /** The first user prompt text (may be empty if first message had no text parts) */
+  prompt?: string
+  /** Model ID (e.g. "claude-sonnet-4-20250514") */
+  model?: string
+}
+
 export type AgentConnection = {
   client: AcpClient
   listSessions: () => Promise<Session[]>
   getShareUrl?: (sessionId: string) => Promise<string | undefined>
+  /** Fetch the first user message from a session (prompt text + model). Only available for opencode. */
+  getFirstMessage?: (sessionId: string) => Promise<FirstMessageInfo | undefined>
   kill: () => void
 }
 
@@ -126,6 +135,35 @@ async function connectOpencode(): Promise<AgentConnection> {
       }
 
       return sessions
+    },
+    // Fetch the first user message from a session (prompt text + model).
+    getFirstMessage: async (sessionId: string) => {
+      try {
+        const result = await sdk.session.messages({ sessionID: sessionId })
+        if (result.error || !result.data) return undefined
+
+        // Find the first user message by earliest timestamp
+        const userMessages = result.data
+          .filter((m): m is typeof m & { info: { role: 'user' } } => m.info.role === 'user')
+          .sort((a, b) => a.info.time.created - b.info.time.created)
+
+        const first = userMessages[0]
+        if (!first) return undefined
+
+        // Extract text from TextPart entries
+        const textParts = first.parts
+          .filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text')
+          .map((p) => p.text)
+        const prompt = textParts.join('\n').trim()
+
+        const info = first.info as { model?: { modelID?: string } }
+        const model = info.model?.modelID?.trim() || undefined
+
+        if (!prompt && !model) return undefined
+        return { ...(prompt ? { prompt } : {}), ...(model ? { model } : {}) }
+      } catch {
+        return undefined
+      }
     },
     // Auto-share a session via POST /session/{id}/share.
     // Idempotent — returns existing URL if already shared.

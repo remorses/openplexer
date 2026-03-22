@@ -2,6 +2,11 @@
 // Creates board databases, creates/updates session pages.
 
 import { Client } from '@notionhq/client'
+import type {
+  DatabaseObjectResponse,
+  DataSourceObjectResponse,
+  PageObjectResponse,
+} from '@notionhq/client/build/src/api-endpoints.js'
 import type { AcpClient } from './config.ts'
 
 export const STATUS_OPTIONS = [
@@ -47,15 +52,12 @@ export async function getRootPages({ notion }: { notion: Client }): Promise<Root
     })
 
     for (const result of res.results) {
-      if (!('parent' in result) || !('properties' in result)) {
-        continue
-      }
-      // Only show root pages (direct children of workspace), skip databases
-      if (result.object !== 'page' || result.parent.type !== 'workspace') {
-        continue
-      }
+      // Only full page objects (not partial) that are root pages (direct children of workspace)
+      if (result.object !== 'page') continue
+      const page = result as PageObjectResponse
+      if (!page.parent || page.parent.type !== 'workspace') continue
 
-      const titleProp = Object.values(result.properties).find((p) => p.type === 'title')
+      const titleProp = Object.values(page.properties).find((p) => p.type === 'title')
       const title = (() => {
         if (!titleProp || titleProp.type !== 'title') {
           return ''
@@ -64,16 +66,16 @@ export async function getRootPages({ notion }: { notion: Client }): Promise<Root
       })()
 
       const icon = (() => {
-        if (!result.icon) {
+        if (!page.icon) {
           return ''
         }
-        if (result.icon.type === 'emoji') {
-          return result.icon.emoji
+        if (page.icon.type === 'emoji') {
+          return page.icon.emoji
         }
         return ''
       })()
 
-      pages.push({ id: result.id, title: title || result.url, url: result.url, icon })
+      pages.push({ id: page.id, title: title || page.url, url: page.url, icon })
     }
 
     if (!res.has_more || !res.next_cursor) {
@@ -85,15 +87,9 @@ export async function getRootPages({ notion }: { notion: Client }): Promise<Root
   return pages
 }
 
-export async function createBoardDatabase({
-  notion,
-  pageId,
-  clients,
-}: {
-  notion: Client
-  pageId: string
-  clients: AcpClient[]
-}): Promise<CreateDatabaseResult> {
+/** Build the canonical set of properties for a board database.
+ *  Used both at creation and to ensure existing boards have all expected props. */
+function buildBoardProperties({ clients }: { clients: AcpClient[] }): Record<string, unknown> {
   const hasOpencode = clients.includes('opencode')
 
   const properties: Record<string, unknown> = {
@@ -115,11 +111,26 @@ export async function createBoardDatabase({
       type: 'select',
       select: { options: ACTIVITY_OPTIONS },
     },
+    Model: { type: 'rich_text', rich_text: {} },
   }
 
   if (hasOpencode) {
     properties['Kimaki'] = { type: 'url', url: {} }
   }
+
+  return properties
+}
+
+export async function createBoardDatabase({
+  notion,
+  pageId,
+  clients,
+}: {
+  notion: Client
+  pageId: string
+  clients: AcpClient[]
+}): Promise<CreateDatabaseResult> {
+  const properties = buildBoardProperties({ clients })
 
   const database = await notion.databases.create({
     parent: { type: 'page_id', page_id: pageId },
@@ -133,15 +144,12 @@ export async function createBoardDatabase({
   // Database is created with a default Table view. Create a Board view
   // grouped by Status so sessions show as a kanban board, then delete the
   // default Table view so Board becomes the default.
-  const dataSourceId = 'data_sources' in database
-    ? database.data_sources?.[0]?.id
-    : undefined
+  const db = database as DatabaseObjectResponse
+  const dataSourceId = db.data_sources?.[0]?.id
   if (dataSourceId) {
     // Retrieve the data source to get property IDs for group_by and visibility
-    const dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId })
-    const dsProps = 'properties' in dataSource
-      ? (dataSource.properties as Record<string, { id: string; type: string }>)
-      : {}
+    const dataSource = await notion.dataSources.retrieve({ data_source_id: dataSourceId }) as DataSourceObjectResponse
+    const dsProps = dataSource.properties as Record<string, { id: string; type: string }>
 
     const propId = (name: string) =>
       Object.entries(dsProps).find(([n]) => n === name)?.[1]?.id
@@ -150,7 +158,7 @@ export async function createBoardDatabase({
 
     // Properties visible on board cards
     // Status is the board grouping property — Notion hides it from cards by default
-    const visibleOnCard = new Set(['Repo', 'Updated', 'Created', 'Activity'])
+    const visibleOnCard = new Set(['Repo', 'Updated', 'Created', 'Activity', 'Model'])
     const propertiesConfig = Object.entries(dsProps).map(([name, { id }]) => ({
       property_id: id,
       visible: visibleOnCard.has(name),
@@ -189,6 +197,35 @@ export async function createBoardDatabase({
   }
 
   return { databaseId: database.id }
+}
+
+/** Ensure an existing board database has all expected properties.
+ *  Called once per board at daemon start. Notion merges — existing props
+ *  are left alone, missing ones get added. */
+export async function ensureBoardSchema({
+  notion,
+  databaseId,
+  clients,
+}: {
+  notion: Client
+  databaseId: string
+  clients: AcpClient[]
+}): Promise<void> {
+  const database = await notion.databases.retrieve({ database_id: databaseId }) as DatabaseObjectResponse
+  const dataSourceId = database.data_sources?.[0]?.id
+  if (!dataSourceId) return
+
+  // Send all expected properties — Notion merges, so existing ones are untouched
+  // and missing ones get created.
+  const properties = buildBoardProperties({ clients })
+
+  // Remove 'Name' (title property) — can't be added via update, it already exists
+  delete properties['Name']
+
+  await notion.dataSources.update({
+    data_source_id: dataSourceId,
+    properties: properties as Parameters<Client['dataSources']['update']>[0]['properties'],
+  })
 }
 
 // Create an example page in the database explaining how sessions appear.
@@ -339,6 +376,8 @@ export async function createSessionPage({
   updatedAt,
   activity,
   icon,
+  model,
+  firstPrompt,
 }: {
   notion: Client
   databaseId: string
@@ -358,6 +397,10 @@ export async function createSessionPage({
   activity?: string
   /** Emoji icon for the page (deterministic per-repo) */
   icon?: string
+  /** Model ID used for this session (e.g. "claude-sonnet-4-20250514") */
+  model?: string
+  /** First user prompt text — shown as a callout block in the page body */
+  firstPrompt?: string
 }): Promise<string> {
   const properties: Record<string, unknown> = {
     Name: { title: [{ text: { content: title } }] },
@@ -394,11 +437,28 @@ export async function createSessionPage({
   if (activity) {
     properties['Activity'] = { select: { name: activity } }
   }
+  if (model) {
+    properties['Model'] = { rich_text: [{ text: { content: model } }] }
+  }
+
+  // Build page content blocks — callout with first user prompt
+  const children: Parameters<Client['blocks']['children']['append']>[0]['children'] = []
+  if (firstPrompt) {
+    children.push({
+      type: 'callout' as const,
+      callout: {
+        icon: { type: 'emoji' as const, emoji: '💬' as const },
+        color: 'gray_background' as const,
+        rich_text: splitRichText(firstPrompt),
+      },
+    })
+  }
 
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
     ...(icon && { icon: { type: 'emoji' as const, emoji: icon } }),
     properties: properties as Parameters<Client['pages']['create']>[0]['properties'],
+    ...(children.length > 0 && { children }),
   })
 
   return page.id
@@ -447,6 +507,20 @@ export async function updateSessionPage({
     page_id: pageId,
     properties: properties as Parameters<Client['pages']['update']>[0]['properties'],
   })
+}
+
+/** Split text into Notion rich_text items (max 2000 chars each). */
+function splitRichText(text: string): Array<{ type: 'text'; text: { content: string } }> {
+  const MAX_LEN = 2000
+  const items: Array<{ type: 'text'; text: { content: string } }> = []
+  for (let i = 0; i < text.length; i += MAX_LEN) {
+    items.push({ type: 'text', text: { content: text.slice(i, i + MAX_LEN) } })
+  }
+  // At least one item even for empty text
+  if (items.length === 0) {
+    items.push({ type: 'text', text: { content: '' } })
+  }
+  return items
 }
 
 // Rate-limited queue for Notion API calls (max 3/sec)

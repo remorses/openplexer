@@ -14,6 +14,8 @@ export type SyncedSession = {
   updatedAt: string
   shareUrl?: string
   activity?: string
+  /** Model ID written to the Model property (for change detection) */
+  model?: string
 }
 
 export type OpenplexerBoard = {
