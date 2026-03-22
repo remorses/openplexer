@@ -1,11 +1,31 @@
 // Cloudflare Worker entrypoint for openplexer.
-// Handles Notion OAuth flow: redirects user to Notion, receives callback
-// with auth code, exchanges it for tokens, and stores result in KV for
-// the CLI to poll. Same pattern as kimaki's gateway onboarding.
+// Handles Notion OAuth flow, persists accounts in UserStore DO,
+// and exposes API routes for the CLI to save boards.
+// Uses errore pattern: return errors as values, no try-catch for control flow.
 
+import * as errore from 'errore'
+import * as z from 'zod'
 import { Spiceflow } from 'spiceflow'
 import { Client, APIResponseError } from '@notionhq/client'
 import type { Env } from './env.ts'
+
+export { UserStore } from './user-store.ts'
+
+class NotionTokenError extends errore.createTaggedError({
+  name: 'NotionTokenError',
+  message: 'Notion token exchange failed for $operation',
+}) {}
+
+class StoreError extends errore.createTaggedError({
+  name: 'StoreError',
+  message: 'UserStore operation failed for $operation',
+}) {}
+
+/** Get the single UserStore DO stub (idFromName("admin")). */
+function getUserStore(env: Env) {
+  const id = env.USER_STORE.idFromName('admin')
+  return env.USER_STORE.get(id)
+}
 
 const REDIRECT_PATH = '/auth/callback'
 
@@ -85,22 +105,20 @@ const app = new Spiceflow()
       const redirectUri = new URL(REDIRECT_PATH, url.origin).toString()
 
       // Exchange code for tokens via Notion SDK
-      let tokenData: Awaited<ReturnType<Client['oauth']['token']>>
-      try {
-        const notion = new Client()
-        tokenData = await notion.oauth.token({
+      const tokenData = await new Client()
+        .oauth.token({
           client_id: env.NOTION_CLIENT_ID,
           client_secret: env.NOTION_CLIENT_SECRET,
           grant_type: 'authorization_code',
           code,
           redirect_uri: redirectUri,
         })
-      } catch (e) {
-        if (e instanceof APIResponseError) {
-          console.error('Notion token exchange failed:', e.message)
-          return new Response(`Notion authorization failed: ${e.message}`, { status: e.status })
-        }
-        throw e
+        .catch((e: unknown) => new NotionTokenError({ operation: 'exchange', cause: e }))
+      if (tokenData instanceof Error) {
+        const apiErr = errore.findCause(tokenData, APIResponseError)
+        const status = apiErr?.status ?? 500
+        console.error('Notion token exchange failed:', tokenData.message)
+        return new Response(`Notion authorization failed: ${tokenData.message}`, { status })
       }
 
       if (!tokenData.refresh_token) {
@@ -117,7 +135,23 @@ const app = new Spiceflow()
       const ownerUser = tokenData.owner.type === 'user' ? tokenData.owner.user : undefined
       const notionUserName = ownerUser && 'name' in ownerUser ? ownerUser.name : undefined
 
-      // Store tokens in KV with 5 minute TTL
+      // Persist account in the Durable Object first — if this fails, we don't
+      // write to KV so the CLI won't see a false-success auth status.
+      const store = getUserStore(env)
+      const upsertResult = await store.upsertAccount({
+        notionUserId: ownerUser?.id ?? tokenData.bot_id,
+        notionUserName: String(notionUserName ?? '') || null,
+        workspaceId: tokenData.workspace_id,
+        workspaceName: String(tokenData.workspace_name ?? '') || null,
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+      }).catch((e: unknown) => new StoreError({ operation: 'upsert account', cause: e }))
+      if (upsertResult instanceof Error) {
+        console.error('Failed to persist account in DO:', upsertResult.message)
+        return new Response('Authorization succeeded but account persistence failed. Please retry.', { status: 500 })
+      }
+
+      // Store tokens in KV with 5 minute TTL (for CLI polling)
       const kvPayload = {
         accessToken: tokenData.access_token,
         refreshToken: tokenData.refresh_token,
@@ -242,43 +276,117 @@ const app = new Spiceflow()
   .route({
     method: 'POST',
     path: '/auth/refresh',
+    request: z.object({
+      refreshToken: z.string().min(1),
+    }),
+    response: z.object({
+      accessToken: z.string(),
+      refreshToken: z.string(),
+    }),
     async handler({ request, state }) {
-      const body = (await request.json()) as { refreshToken?: string }
-      if (!body.refreshToken) {
-        return new Response('Missing refreshToken', { status: 400 })
-      }
+      const body = await request.json()
 
       const env = state.env
-      let tokenData: Awaited<ReturnType<Client['oauth']['token']>>
-      try {
-        const notion = new Client()
-        tokenData = await notion.oauth.token({
+      const tokenData = await new Client()
+        .oauth.token({
           client_id: env.NOTION_CLIENT_ID,
           client_secret: env.NOTION_CLIENT_SECRET,
           grant_type: 'refresh_token',
           refresh_token: body.refreshToken,
         })
-      } catch (e) {
-        if (e instanceof APIResponseError) {
-          console.error('Notion token refresh failed:', e.message)
-          return new Response(`Token refresh failed: ${e.message}`, { status: e.status })
-        }
-        throw e
+        .catch((e: unknown) => new NotionTokenError({ operation: 'refresh', cause: e }))
+      if (tokenData instanceof Error) {
+        const apiErr = errore.findCause(tokenData, APIResponseError)
+        const status = apiErr?.status ?? 500
+        console.error('Notion token refresh failed:', tokenData.message)
+        throw new Response(`Token refresh failed: ${tokenData.message}`, { status })
       }
 
       if (!tokenData.refresh_token) {
-        return new Response('Notion did not return a refresh token', { status: 502 })
+        throw new Response('Notion did not return a refresh token', { status: 502 })
       }
 
-      return new Response(
-        JSON.stringify({
+      // Update stored tokens in the DO so they stay current
+      const store = getUserStore(env)
+      const account = await store
+        .getAccountByRefreshToken(body.refreshToken)
+        .catch((e: unknown) => new StoreError({ operation: 'get account', cause: e }))
+      if (account instanceof Error) {
+        console.warn('Failed to look up account in DO:', account.message)
+      } else if (account) {
+        const updateResult = await store.upsertAccount({
+          notionUserId: account.notionUserId,
+          notionUserName: account.notionUserName,
+          workspaceId: account.workspaceId,
+          workspaceName: account.workspaceName,
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token,
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      )
+        }).catch((e: unknown) => new StoreError({ operation: 'update tokens', cause: e }))
+        if (updateResult instanceof Error) {
+          console.warn('Failed to update tokens in DO:', updateResult.message)
+        }
+      }
+
+      return {
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+      }
     },
   })
+
+  // --- API routes (authenticated via refresh token) ---
+
+  // Save a board — called by CLI after creating a Notion database
+  .route({
+    method: 'POST',
+    path: '/api/boards',
+    request: z.object({
+      notionDatabaseId: z.string().min(1),
+      notionPageId: z.string().min(1),
+      trackedRepos: z.array(z.string()).default([]),
+      connectedAt: z.string().default(() => new Date().toISOString()),
+    }),
+    response: z.object({
+      boardId: z.string(),
+    }),
+    async handler({ request, state }) {
+      const env = state.env
+      const authHeader = request.headers.get('Authorization') ?? ''
+      if (!authHeader.startsWith('Bearer ')) {
+        throw new Response('Missing or malformed Authorization header', { status: 401 })
+      }
+      const refreshToken = authHeader.slice('Bearer '.length)
+      if (!refreshToken) {
+        throw new Response('Empty Bearer token', { status: 401 })
+      }
+
+      const store = getUserStore(env)
+      const account = await store
+        .getAccountByRefreshToken(refreshToken)
+        .catch((e: unknown) => new StoreError({ operation: 'auth lookup', cause: e }))
+      if (account instanceof Error) {
+        console.error('Auth lookup failed:', account.message)
+        throw new Response('Internal error', { status: 500 })
+      }
+      if (!account) {
+        throw new Response('Invalid token', { status: 401 })
+      }
+
+      const body = await request.json()
+
+      const boardId = await store
+        .saveBoard(account.id, body)
+        .catch((e: unknown) => new StoreError({ operation: 'save board', cause: e }))
+      if (boardId instanceof Error) {
+        console.error('Failed to save board:', boardId.message)
+        throw new Response('Failed to save board', { status: 500 })
+      }
+
+      return { boardId }
+    },
+  })
+
+export type App = typeof app
 
 export default {
   fetch(request: Request, env: Env) {

@@ -10,6 +10,27 @@
       "id": "576aff8a55d14a43a4dcafe726cc858b"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "USER_STORE",
+        "class_name": "UserStore"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["UserStore"]
+    }
+  ],
+  "rules": [
+    {
+      "type": "Text",
+      "globs": ["**/*.sql"],
+      "fallthrough": true
+    }
+  ],
   "routes": [
     {
       "pattern": "openplexer.com",
@@ -23,6 +44,20 @@
         {
           "binding": "OPENPLEXER_KV",
           "id": "f07fcdcadc4a4ca39a775be1a944d452"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "USER_STORE",
+            "class_name": "UserStore"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "v1",
+          "new_sqlite_classes": ["UserStore"]
         }
       ],
       "routes": [
