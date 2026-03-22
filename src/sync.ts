@@ -435,6 +435,10 @@ async function refreshBoardToken({
   )
   if (data instanceof Error) return data
 
+  if (!data.accessToken || !data.refreshToken) {
+    return new TokenRefreshError({ board: board.notionWorkspaceName, reason: 'server returned empty tokens' })
+  }
+
   board.notionToken = data.accessToken
   board.notionRefreshToken = data.refreshToken
   writeConfig(config)

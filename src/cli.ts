@@ -338,6 +338,11 @@ async function connectFlow(): Promise<void> {
     process.exit(1)
   }
 
+  if (!authResult.accessToken || !authResult.refreshToken) {
+    s.stop('Notion authorization incomplete: missing access token or refresh token')
+    process.exit(1)
+  }
+
   s.stop(`Connected to ${authResult.workspaceName}`)
 
   // Step 5: Select Notion page from root pages
