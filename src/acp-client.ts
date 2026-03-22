@@ -26,11 +26,12 @@ import type { AcpClient } from './config.ts'
 // Shared types
 // ---------------------------------------------------------------------------
 
-export type SessionWithParent = SessionInfo & { parentId?: string }
+export type SessionWithParent = SessionInfo & { parentId?: string; shareUrl?: string }
 
 export type AgentConnection = {
   client: AcpClient
   listSessions: () => Promise<SessionWithParent[]>
+  getShareUrl?: (sessionId: string) => Promise<string | undefined>
   kill: () => void
 }
 
@@ -98,6 +99,7 @@ async function connectOpencode(): Promise<AgentConnection> {
             title: s.title,
             updatedAt: new Date(s.time.updated).toISOString(),
             parentId: s.parentID,
+            shareUrl: s.share?.url,
           })
         }
 
@@ -108,6 +110,16 @@ async function connectOpencode(): Promise<AgentConnection> {
       }
 
       return sessions
+    },
+    // Auto-share a session via POST /session/{id}/share.
+    // Idempotent — returns existing URL if already shared.
+    getShareUrl: async (sessionId: string) => {
+      try {
+        const result = await sdk.session.share({ sessionID: sessionId })
+        return result.data?.share?.url
+      } catch {
+        return undefined
+      }
     },
     kill: () => {
       child.kill()

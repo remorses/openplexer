@@ -18,7 +18,10 @@ import os from 'node:os'
 
 const SYNC_INTERVAL_MS = 5000
 
-type TaggedSession = SessionWithParent & { source: AcpClient }
+type TaggedSession = SessionWithParent & {
+  source: AcpClient
+  getShareUrl?: (sessionId: string) => Promise<string | undefined>
+}
 
 export async function startSyncLoop({
   config,
@@ -61,7 +64,7 @@ async function syncOnce({
       for (const session of clientSessions) {
         if (!seenIds.has(session.sessionId)) {
           seenIds.add(session.sessionId)
-          sessions.push({ ...session, source: agent.client })
+          sessions.push({ ...session, source: agent.client, getShareUrl: agent.getShareUrl })
         }
       }
     } catch (err) {
@@ -134,6 +137,9 @@ async function syncBoard({
 
     const title = session.title || `Session ${session.sessionId.slice(0, 8)}`
 
+    // Resolve share URL: use cached value from listSessions, or auto-share via SDK
+    const shareUrl = session.shareUrl ?? await session.getShareUrl?.(session.sessionId)
+
     if (existingPageId) {
       // Update existing page
       try {
@@ -143,6 +149,7 @@ async function syncBoard({
             pageId: existingPageId,
             title: session.title || undefined,
             updatedAt: session.updatedAt || undefined,
+            shareUrl,
           })
         })
       } catch (err) {
@@ -183,6 +190,7 @@ async function syncBoard({
             resumeCommand,
             assigneeId: board.notionUserId,
             folder,
+            shareUrl,
             kimakiUrl: kimakiUrl || undefined,
             createdAt: new Date().toISOString(),
             updatedAt: session.updatedAt || undefined,

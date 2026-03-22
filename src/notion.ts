@@ -394,11 +394,15 @@ export async function updateSessionPage({
   pageId,
   title,
   updatedAt,
+  shareUrl,
+  kimakiUrl,
 }: {
   notion: Client
   pageId: string
   title?: string
   updatedAt?: string
+  shareUrl?: string
+  kimakiUrl?: string
 }): Promise<void> {
   const properties: Record<string, unknown> = {}
 
@@ -407,6 +411,12 @@ export async function updateSessionPage({
   }
   if (updatedAt) {
     properties['Updated'] = { date: { start: updatedAt } }
+  }
+  if (shareUrl) {
+    properties['Share URL'] = { url: shareUrl }
+  }
+  if (kimakiUrl) {
+    properties['Kimaki'] = { url: kimakiUrl }
   }
 
   if (Object.keys(properties).length === 0) {
