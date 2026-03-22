@@ -4,7 +4,7 @@
 
 import type { OpenplexerBoard, OpenplexerConfig, AcpClient } from './config.ts'
 import { writeConfig } from './config.ts'
-import { type AgentConnection, type SessionWithParent } from './acp-client.ts'
+import { type AgentConnection, type Session } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
 import {
   createNotionClient,
@@ -34,7 +34,7 @@ const sessionKimakiState = new Map<string, { createdAt: number; hasKimakiUrl: bo
 // for new session creates where K is low.
 const repoCache = new Map<string, { slug: string; url: string }>()
 
-type TaggedSession = SessionWithParent & {
+type TaggedSession = Session & {
   source: AcpClient
   getShareUrl?: (sessionId: string) => Promise<string | undefined>
 }
@@ -194,12 +194,14 @@ async function syncBoard({
 
       // Compare with cached state — skip Notion API call if nothing changed
       const newUpdatedAt = session.updatedAt || ''
+      const newActivity = session.activity
       const titleChanged = title !== cached.title
       const updatedAtChanged = newUpdatedAt !== cached.updatedAt
       const hasKimakiUpdate = !!kimakiUrl
       const hasShareUrlUpdate = !!shareUrl && shareUrl !== cached.shareUrl
+      const activityChanged = !!newActivity && newActivity !== cached.activity
 
-      if (!titleChanged && !updatedAtChanged && !hasKimakiUpdate && !hasShareUrlUpdate) {
+      if (!titleChanged && !updatedAtChanged && !hasKimakiUpdate && !hasShareUrlUpdate && !activityChanged) {
         continue
       }
 
@@ -213,6 +215,7 @@ async function syncBoard({
             updatedAt: session.updatedAt || undefined,
             shareUrl: hasShareUrlUpdate ? shareUrl : undefined,
             kimakiUrl,
+            activity: activityChanged ? newActivity : undefined,
           })
         })
         // Update cached state so next tick can skip if unchanged
@@ -221,6 +224,7 @@ async function syncBoard({
           title,
           updatedAt: newUpdatedAt,
           shareUrl: shareUrl ?? cached.shareUrl,
+          activity: newActivity ?? cached.activity,
         }
         dirty = true
       } catch (err) {
@@ -268,6 +272,7 @@ async function syncBoard({
             kimakiUrl: kimakiUrl || undefined,
             createdAt: new Date().toISOString(),
             updatedAt: session.updatedAt || undefined,
+            activity: session.activity,
             icon: resolveRepoIcon({ slug: repoSlug, branch, repoIcons }),
           })
         })
@@ -277,6 +282,7 @@ async function syncBoard({
           title,
           updatedAt: session.updatedAt ?? '',
           shareUrl: shareUrl ?? '',
+          activity: session.activity,
         }
         sessionKimakiState.set(`${board.notionDatabaseId}:${session.sessionId}`, {
           createdAt: Date.now(),

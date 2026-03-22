@@ -13,6 +13,7 @@ export type SyncedSession = {
   title: string
   updatedAt: string
   shareUrl?: string
+  activity?: string
 }
 
 export type OpenplexerBoard = {

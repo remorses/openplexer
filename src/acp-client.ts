@@ -26,17 +26,21 @@ import type { AcpClient } from './config.ts'
 // Shared types
 // ---------------------------------------------------------------------------
 
-export type SessionWithParent = SessionInfo & { parentId?: string; shareUrl?: string }
+export type Activity = 'Running' | 'Idle'
+
+export type Session = SessionInfo & {
+  parentId?: string
+  shareUrl?: string
+  /** Agent activity: Running (busy), Idle (waiting for user). Only available for opencode. */
+  activity?: Activity
+}
 
 export type AgentConnection = {
   client: AcpClient
-  listSessions: () => Promise<SessionWithParent[]>
+  listSessions: () => Promise<Session[]>
   getShareUrl?: (sessionId: string) => Promise<string | undefined>
   kill: () => void
 }
-
-// Keep the old type as an alias for backwards compat in sync.ts
-export type AcpConnection = AgentConnection
 
 // ---------------------------------------------------------------------------
 // opencode — HTTP server with /experimental/session (global, all projects)
@@ -77,7 +81,7 @@ async function connectOpencode(): Promise<AgentConnection> {
   return {
     client: 'opencode',
     listSessions: async () => {
-      const sessions: SessionWithParent[] = []
+      const sessions: Session[] = []
       let cursor: number | undefined
 
       // Paginate through /experimental/session which uses Session.listGlobal()
@@ -107,6 +111,18 @@ async function connectOpencode(): Promise<AgentConnection> {
         const nextCursor = result.response.headers.get('x-next-cursor')
         if (!nextCursor) break
         cursor = Number(nextCursor)
+      }
+
+      // Fetch all session statuses in one bulk call and attach activity
+      const statusResult = await sdk.session.status().catch(() => undefined)
+      if (statusResult?.data) {
+        const statuses = statusResult.data as Record<string, { type: string }>
+        for (const session of sessions) {
+          const status = statuses[session.sessionId]
+          if (status) {
+            session.activity = status.type === 'busy' ? 'Running' : 'Idle'
+          }
+        }
       }
 
       return sessions
@@ -248,15 +264,4 @@ export async function connectAgent({ client }: { client: AcpClient }): Promise<A
   return connectAcpAgent(client)
 }
 
-// Legacy exports for backwards compat
-export async function connectAcp({ client }: { client: AcpClient }): Promise<AgentConnection> {
-  return connectAgent({ client })
-}
 
-export async function listAllSessions({
-  connection,
-}: {
-  connection: AgentConnection
-}): Promise<SessionInfo[]> {
-  return connection.listSessions()
-}

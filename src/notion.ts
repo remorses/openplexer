@@ -10,6 +10,11 @@ export const STATUS_OPTIONS = [
   { name: 'Done', color: 'green' as const },
 ]
 
+export const ACTIVITY_OPTIONS = [
+  { name: 'Running', color: 'blue' as const },
+  { name: 'Idle', color: 'yellow' as const },
+]
+
 export type CreateDatabaseResult = {
   databaseId: string
 }
@@ -106,6 +111,10 @@ export async function createBoardDatabase({
     Folder: { type: 'rich_text', rich_text: {} },
     Created: { type: 'date', date: {} },
     Updated: { type: 'date', date: {} },
+    Activity: {
+      type: 'select',
+      select: { options: ACTIVITY_OPTIONS },
+    },
   }
 
   if (hasOpencode) {
@@ -140,7 +149,8 @@ export async function createBoardDatabase({
     const statusPropertyId = propId('Status')
 
     // Properties visible on board cards
-    const visibleOnCard = new Set(['Status', 'Repo', 'Updated', 'Created'])
+    // Status is the board grouping property — Notion hides it from cards by default
+    const visibleOnCard = new Set(['Repo', 'Updated', 'Created', 'Activity'])
     const propertiesConfig = Object.entries(dsProps).map(([name, { id }]) => ({
       property_id: id,
       visible: visibleOnCard.has(name),
@@ -327,6 +337,7 @@ export async function createSessionPage({
   kimakiUrl,
   createdAt,
   updatedAt,
+  activity,
   icon,
 }: {
   notion: Client
@@ -344,6 +355,7 @@ export async function createSessionPage({
   kimakiUrl?: string
   createdAt?: string
   updatedAt?: string
+  activity?: string
   /** Emoji icon for the page (deterministic per-repo) */
   icon?: string
 }): Promise<string> {
@@ -379,6 +391,9 @@ export async function createSessionPage({
   if (updatedAt) {
     properties['Updated'] = { date: { start: updatedAt } }
   }
+  if (activity) {
+    properties['Activity'] = { select: { name: activity } }
+  }
 
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
@@ -396,6 +411,7 @@ export async function updateSessionPage({
   updatedAt,
   shareUrl,
   kimakiUrl,
+  activity,
 }: {
   notion: Client
   pageId: string
@@ -403,6 +419,7 @@ export async function updateSessionPage({
   updatedAt?: string
   shareUrl?: string
   kimakiUrl?: string
+  activity?: string
 }): Promise<void> {
   const properties: Record<string, unknown> = {}
 
@@ -417,6 +434,9 @@ export async function updateSessionPage({
   }
   if (kimakiUrl) {
     properties['Kimaki'] = { url: kimakiUrl }
+  }
+  if (activity) {
+    properties['Activity'] = { select: { name: activity } }
   }
 
   if (Object.keys(properties).length === 0) {
