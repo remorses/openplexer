@@ -29,11 +29,24 @@ function fnv1a(str: string): number {
 }
 
 /**
+ * Final avalanche mix — spreads entropy across all 32 bits so modulo
+ * by small numbers (like 64) doesn't rely only on the weak low bits.
+ */
+function mix32(x: number): number {
+  x ^= x >>> 16
+  x = Math.imul(x, 0x7feb352d)
+  x ^= x >>> 15
+  x = Math.imul(x, 0x846ca68b)
+  x ^= x >>> 16
+  return x >>> 0
+}
+
+/**
  * Get a deterministic emoji for a repo slug (e.g. "owner/repo").
  * Same slug always returns the same emoji.
  */
 export function getRepoEmoji(slug: string): string {
-  const index = fnv1a(slug) % REPO_EMOJIS.length
+  const index = mix32(fnv1a(slug)) % REPO_EMOJIS.length
   return REPO_EMOJIS[index]
 }
 

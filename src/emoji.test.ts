@@ -40,9 +40,9 @@ describe('getRepoEmoji', () => {
   })
 
   it('snapshot a few known mappings for stability', () => {
-    expect(getRepoEmoji('remorses/openplexer')).toMatchInlineSnapshot(`"💧"`)
-    expect(getRepoEmoji('vercel/next.js')).toMatchInlineSnapshot(`"🟤"`)
-    expect(getRepoEmoji('facebook/react')).toMatchInlineSnapshot(`"⚙️"`)
+    expect(getRepoEmoji('remorses/openplexer')).toMatchInlineSnapshot(`"🌙"`)
+    expect(getRepoEmoji('vercel/next.js')).toMatchInlineSnapshot(`"🛸"`)
+    expect(getRepoEmoji('facebook/react')).toMatchInlineSnapshot(`"🏝️"`)
   })
 })
 
