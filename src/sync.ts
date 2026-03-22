@@ -2,10 +2,9 @@
 // Runs every 5 seconds, creates new pages for untracked sessions,
 // updates existing ones when title/updatedAt changes.
 
-import type { SessionInfo } from '@agentclientprotocol/sdk'
 import type { OpenplexerBoard, OpenplexerConfig, AcpClient } from './config.ts'
 import { writeConfig } from './config.ts'
-import { type AgentConnection } from './acp-client.ts'
+import { type AgentConnection, type SessionWithParent } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
 import {
   createNotionClient,
@@ -17,7 +16,7 @@ import { execFile } from 'node:child_process'
 
 const SYNC_INTERVAL_MS = 5000
 
-type TaggedSession = SessionInfo & { source: AcpClient }
+type TaggedSession = SessionWithParent & { source: AcpClient }
 
 export async function startSyncLoop({
   config,
@@ -68,8 +67,11 @@ async function syncOnce({
     }
   }
 
+  // Filter out sub-sessions (agent tasks, subtasks) — only sync top-level sessions
+  const topLevelSessions = sessions.filter((s) => !s.parentId)
+
   for (const board of config.boards) {
-    await syncBoard({ board, sessions })
+    await syncBoard({ board, sessions: topLevelSessions })
   }
 
   // Persist updated syncedSessions

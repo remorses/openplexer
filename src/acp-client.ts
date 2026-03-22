@@ -26,9 +26,11 @@ import type { AcpClient } from './config.ts'
 // Shared types
 // ---------------------------------------------------------------------------
 
+export type SessionWithParent = SessionInfo & { parentId?: string }
+
 export type AgentConnection = {
   client: AcpClient
-  listSessions: () => Promise<SessionInfo[]>
+  listSessions: () => Promise<SessionWithParent[]>
   kill: () => void
 }
 
@@ -74,7 +76,7 @@ async function connectOpencode(): Promise<AgentConnection> {
   return {
     client: 'opencode',
     listSessions: async () => {
-      const sessions: SessionInfo[] = []
+      const sessions: SessionWithParent[] = []
       let cursor: number | undefined
 
       // Paginate through /experimental/session which uses Session.listGlobal()
@@ -95,6 +97,7 @@ async function connectOpencode(): Promise<AgentConnection> {
             cwd: s.directory,
             title: s.title,
             updatedAt: new Date(s.time.updated).toISOString(),
+            parentId: s.parentID,
           })
         }
 
