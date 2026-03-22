@@ -21,7 +21,7 @@ import crypto from 'node:crypto'
 import path from 'node:path'
 import { exec } from 'node:child_process'
 import { readConfig, writeConfig, type OpenplexerConfig, type OpenplexerBoard, type AcpClient } from './config.ts'
-import { connectAcp, listAllSessions, type AcpConnection } from './acp-client.ts'
+import { connectAgent, type AgentConnection } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
 import { createNotionClient, createBoardDatabase, createExamplePage, getRootPages } from './notion.ts'
 import { evictExistingInstance, getLockPort, startLockServer } from './lock.ts'
@@ -170,8 +170,8 @@ async function connectFlow(): Promise<void> {
 
   for (const client of config.clients) {
     try {
-      const acp = await connectAcp({ client })
-      const sessions = await listAllSessions({ connection: acp.connection })
+      const acp = await connectAgent({ client })
+      const sessions = await acp.listSessions()
 
       // Extract unique repos from session cwds
       const cwds = [...new Set(sessions.map((sess) => sess.cwd).filter(Boolean))] as string[]
@@ -367,10 +367,10 @@ async function startDaemon(config: OpenplexerConfig): Promise<void> {
 
   console.log(`openplexer daemon started (PID ${process.pid}, port ${port})`)
 
-  const connections: AcpConnection[] = []
+  const connections: AgentConnection[] = []
   for (const client of config.clients) {
     try {
-      const acp = await connectAcp({ client })
+      const acp = await connectAgent({ client })
       connections.push(acp)
       console.log(`Connected to ${client} via ACP`)
     } catch {

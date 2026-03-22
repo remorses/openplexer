@@ -1,7 +1,14 @@
-// Spawn an ACP agent (opencode or claude) as a child process and connect
-// as a client via stdio. Uses @agentclientprotocol/sdk for the protocol.
+// Connect to coding agents and list their sessions.
+//
+// opencode: spawns `opencode serve` and uses the HTTP API's
+//   /experimental/session endpoint which returns sessions across ALL
+//   projects (Session.listGlobal). The ACP protocol's listSessions
+//   calls Session.list which is scoped to a single project — that's
+//   why we bypass ACP for opencode.
+//
+// claude / codex: uses ACP over stdio (unchanged).
 
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { Writable, Readable } from 'node:stream'
@@ -12,7 +19,102 @@ import {
   type Client,
   type SessionInfo,
 } from '@agentclientprotocol/sdk'
+import { createOpencodeClient } from '@opencode-ai/sdk/v2'
 import type { AcpClient } from './config.ts'
+
+// ---------------------------------------------------------------------------
+// Shared types
+// ---------------------------------------------------------------------------
+
+export type AgentConnection = {
+  client: AcpClient
+  listSessions: () => Promise<SessionInfo[]>
+  kill: () => void
+}
+
+// Keep the old type as an alias for backwards compat in sync.ts
+export type AcpConnection = AgentConnection
+
+// ---------------------------------------------------------------------------
+// opencode — HTTP server with /experimental/session (global, all projects)
+// ---------------------------------------------------------------------------
+
+async function connectOpencode(): Promise<AgentConnection> {
+  const PORT = 18_923
+  const baseUrl = `http://127.0.0.1:${PORT}`
+
+  // Spawn `opencode serve` on a known port. cwd doesn't matter since
+  // we use the global endpoint.
+  const child = spawn('opencode', ['serve', '--port', String(PORT)], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    cwd: '/',
+  })
+
+  const sdk = createOpencodeClient({ baseUrl })
+
+  // Wait for the server to be ready (poll until it responds)
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${baseUrl}/session?limit=1`)
+      if (res.ok) break
+    } catch {
+      // server not ready yet
+    }
+    await new Promise((r) => setTimeout(r, 200))
+  }
+
+  // Verify it's actually up
+  const check = await fetch(`${baseUrl}/session?limit=1`).catch(() => null)
+  if (!check?.ok) {
+    child.kill()
+    throw new Error('opencode serve failed to start')
+  }
+
+  return {
+    client: 'opencode',
+    listSessions: async () => {
+      const sessions: SessionInfo[] = []
+      let cursor: number | undefined
+
+      // Paginate through /experimental/session which uses Session.listGlobal()
+      // (returns sessions across ALL projects, not scoped to one)
+      while (true) {
+        const result = await sdk.experimental.session.list({
+          roots: true,
+          ...(cursor !== undefined && { cursor }),
+        })
+
+        if (result.error || !result.data) {
+          throw new Error(`opencode API error: ${result.error}`)
+        }
+
+        for (const s of result.data) {
+          sessions.push({
+            sessionId: s.id,
+            cwd: s.directory,
+            title: s.title,
+            updatedAt: new Date(s.time.updated).toISOString(),
+          })
+        }
+
+        // Pagination cursor is in the x-next-cursor response header
+        const nextCursor = result.response.headers.get('x-next-cursor')
+        if (!nextCursor) break
+        cursor = Number(nextCursor)
+      }
+
+      return sessions
+    },
+    kill: () => {
+      child.kill()
+    },
+  }
+}
+
+// ---------------------------------------------------------------------------
+// claude / codex — ACP over stdio
+// ---------------------------------------------------------------------------
 
 function nodeToWebWritable(nodeStream: Writable): WritableStream<Uint8Array> {
   return new WritableStream<Uint8Array>({
@@ -46,9 +148,6 @@ function nodeToWebReadable(nodeStream: Readable): ReadableStream<Uint8Array> {
   })
 }
 
-// Minimal Client implementation — we only need session listing,
-// not file ops or permissions. requestPermission and sessionUpdate
-// are required by the Client interface.
 class MinimalClient implements Client {
   async requestPermission() {
     return { outcome: { outcome: 'cancelled' as const } }
@@ -62,14 +161,7 @@ class MinimalClient implements Client {
   }
 }
 
-// Resolve the ACP binary path for each client. For claude and codex,
-// we resolve the bin entry from the installed npm package so they
-// don't need to be globally installed or in PATH.
-function resolveAcpBinary(client: AcpClient): { cmd: string; args: string[] } {
-  if (client === 'opencode') {
-    return { cmd: 'opencode', args: ['acp'] }
-  }
-
+function resolveAcpBinary(client: 'claude' | 'codex'): { cmd: string; args: string[] } {
   const require = createRequire(import.meta.url)
   const packageName = client === 'claude'
     ? '@zed-industries/claude-agent-acp'
@@ -85,26 +177,9 @@ function resolveAcpBinary(client: AcpClient): { cmd: string; args: string[] } {
   return { cmd: process.execPath, args: [binPath] }
 }
 
-export type AcpConnection = {
-  connection: ClientSideConnection
-  client: AcpClient
-  kill: () => void
-}
-
-export async function connectAcp({
-  client,
-}: {
-  client: AcpClient
-}): Promise<AcpConnection> {
-  // opencode has a built-in `opencode acp` subcommand.
-  // claude and codex use standalone ACP adapter packages installed as
-  // dependencies. We resolve the bin path via package.json so they
-  // don't need to be in PATH.
+async function connectAcpAgent(client: 'claude' | 'codex'): Promise<AgentConnection> {
   const { cmd, args } = resolveAcpBinary(client)
 
-  // Spawn from "/" so the opencode server isn't scoped to a single
-  // project directory. Without this, Session.list() filters by the
-  // current project and we only see sessions for one repo.
   const child = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', 'inherit'],
     cwd: '/',
@@ -125,33 +200,48 @@ export async function connectAcp({
   })
 
   return {
-    connection,
     client,
+    listSessions: async () => {
+      const sessions: SessionInfo[] = []
+      let cursor: string | undefined
+
+      while (true) {
+        const response = await connection.listSessions({
+          ...(cursor ? { cursor } : {}),
+        })
+        sessions.push(...response.sessions)
+        if (!response.nextCursor) break
+        cursor = response.nextCursor
+      }
+
+      return sessions
+    },
     kill: () => {
       child.kill()
     },
   }
 }
 
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export async function connectAgent({ client }: { client: AcpClient }): Promise<AgentConnection> {
+  if (client === 'opencode') {
+    return connectOpencode()
+  }
+  return connectAcpAgent(client)
+}
+
+// Legacy exports for backwards compat
+export async function connectAcp({ client }: { client: AcpClient }): Promise<AgentConnection> {
+  return connectAgent({ client })
+}
+
 export async function listAllSessions({
   connection,
 }: {
-  connection: ClientSideConnection
+  connection: AgentConnection
 }): Promise<SessionInfo[]> {
-  const sessions: SessionInfo[] = []
-  let cursor: string | undefined
-
-  // Paginate through all sessions
-  while (true) {
-    const response = await connection.listSessions({
-      ...(cursor ? { cursor } : {}),
-    })
-    sessions.push(...response.sessions)
-    if (!response.nextCursor) {
-      break
-    }
-    cursor = response.nextCursor
-  }
-
-  return sessions
+  return connection.listSessions()
 }

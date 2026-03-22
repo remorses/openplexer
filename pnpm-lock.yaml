@@ -17,6 +17,9 @@ importers:
       '@notionhq/client':
         specifier: ^5.13.0
         version: 5.14.0
+      '@opencode-ai/sdk':
+        specifier: ^1.2.27
+        version: 1.2.27
       '@zed-industries/claude-agent-acp':
         specifier: ^0.22.2
         version: 0.22.2
@@ -615,6 +618,9 @@ packages:
   '@notionhq/client@5.14.0':
     resolution: {integrity: sha512-9bbH7/9M6D9YlHMYCZ1aAFxRCWiKRBpP/XOnAHFtBCFDf00PPhpWRSsGE1FfmjYCNW2BFRj19WshJFH5IFfNvg==}
     engines: {node: '>=18'}
+
+  '@opencode-ai/sdk@1.2.27':
+    resolution: {integrity: sha512-Wk0o/I+Fo+wE3zgvlJDs8Fb67KlKqX0PrV8dK5adSDkANq6r4Z25zXJg2iOir+a8ntg3rAcpel1OY4FV/TwRUA==}
 
   '@oxc-project/types@0.120.0':
     resolution: {integrity: sha512-k1YNu55DuvAip/MGE1FTsIuU3FUCn6v/ujG9V7Nq5Df/kX2CWb13hhwD0lmJGMGqE+bE1MXvv9SZVnMzEXlWcg==}
@@ -2001,6 +2007,8 @@ snapshots:
     optional: true
 
   '@notionhq/client@5.14.0': {}
+
+  '@opencode-ai/sdk@1.2.27': {}
 
   '@oxc-project/types@0.120.0': {}
 

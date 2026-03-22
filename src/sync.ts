@@ -5,7 +5,7 @@
 import type { SessionInfo } from '@agentclientprotocol/sdk'
 import type { OpenplexerBoard, OpenplexerConfig, AcpClient } from './config.ts'
 import { writeConfig } from './config.ts'
-import { listAllSessions, type AcpConnection } from './acp-client.ts'
+import { type AgentConnection } from './acp-client.ts'
 import { getRepoInfo } from './git.ts'
 import {
   createNotionClient,
@@ -24,7 +24,7 @@ export async function startSyncLoop({
   acpConnections,
 }: {
   config: OpenplexerConfig
-  acpConnections: AcpConnection[]
+  acpConnections: AgentConnection[]
 }): Promise<void> {
   console.log(`Syncing ${config.boards.length} board(s) every ${SYNC_INTERVAL_MS / 1000}s`)
 
@@ -48,19 +48,23 @@ async function syncOnce({
   acpConnections,
 }: {
   config: OpenplexerConfig
-  acpConnections: AcpConnection[]
+  acpConnections: AgentConnection[]
 }): Promise<void> {
-  // Collect sessions from all ACP connections, tagged with their source
+  // Collect sessions from all agent connections, tagged with their source
   const sessions: TaggedSession[] = []
   const seenIds = new Set<string>()
 
-  for (const acp of acpConnections) {
-    const clientSessions = await listAllSessions({ connection: acp.connection })
-    for (const session of clientSessions) {
-      if (!seenIds.has(session.sessionId)) {
-        seenIds.add(session.sessionId)
-        sessions.push({ ...session, source: acp.client })
+  for (const agent of acpConnections) {
+    try {
+      const clientSessions = await agent.listSessions()
+      for (const session of clientSessions) {
+        if (!seenIds.has(session.sessionId)) {
+          seenIds.add(session.sessionId)
+          sessions.push({ ...session, source: agent.client })
+        }
       }
+    } catch (err) {
+      console.error(`Error listing sessions from ${agent.client}:`, err instanceof Error ? err.message : err)
     }
   }
 
