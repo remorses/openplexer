@@ -253,6 +253,10 @@ async function syncBoard({
     if (!session.cwd) {
       continue
     }
+    // Skip e2e test sessions (agent model tests run in tmp/agent-model-e2e folders)
+    if (session.cwd.includes('tmp/agent-model-e2e')) {
+      continue
+    }
     // Skip sessions that predate board creation (unless already synced)
     if (!board.syncedSessions[session.sessionId]) {
       const updatedAtMs = session.updatedAt ? new Date(session.updatedAt).getTime() : 0
