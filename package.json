@@ -33,7 +33,9 @@
     "dev": "doppler run --mount .dev.vars --mount-format env -- wrangler dev --port 8790",
     "deployment": "tsc --noEmit && wrangler deploy --env preview",
     "deployment:production": "tsc --noEmit && wrangler deploy",
-    "secrets:prod": "doppler run -c production --mount .env.prod --mount-format env -- wrangler secret bulk .env.prod"
+    "secrets:prod": "doppler run -c production --mount .env.prod --mount-format env -- wrangler secret bulk .env.prod",
+    "generate:icons": "tsx scripts/generate-notion-icons.ts",
+    "libsql": "echo \"libsql://libsqlproxy.openplexer.com?authToken=admin:$(doppler secrets get SECRET -p openplexer -c prd --plain)\""
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.16.1",
@@ -44,7 +46,8 @@
     "@zed-industries/codex-acp": "^0.10.0",
     "drizzle-orm": "^0.45.1",
     "errore": "*",
-    "goke": "^6.3.0"
+    "goke": "^6.3.0",
+    "libsqlproxy": "^0.1.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260130.0",

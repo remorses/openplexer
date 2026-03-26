@@ -7,19 +7,28 @@ import { DurableObject } from 'cloudflare:workers'
 import * as durable from 'drizzle-orm/durable-sqlite'
 import * as migrator from 'drizzle-orm/durable-sqlite/migrator'
 import * as orm from 'drizzle-orm'
+import { createLibsqlHandler, durableObjectExecutor, type LibsqlHandler } from 'libsqlproxy'
 import migrations from '../drizzle/migrations.js'
 import * as schema from './db/schema.ts'
 import type { Env } from './env.ts'
 
 export class UserStore extends DurableObject<Env> {
   db: durable.DrizzleSqliteDODatabase<typeof schema>
+  #hrana: LibsqlHandler
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.db = durable.drizzle(ctx.storage, { schema })
+    this.#hrana = createLibsqlHandler(durableObjectExecutor(ctx.storage))
     ctx.blockConcurrencyWhile(async () => {
       await migrator.migrate(this.db, migrations)
     })
+  }
+
+  /** Hrana v2 HTTP handler for libsql proxy access.
+   *  Must be a method (not a property) for Cloudflare RPC to find it. */
+  async hranaHandler(request: Request): Promise<Response> {
+    return this.#hrana(request)
   }
 
   /** Find an account by its Notion refresh token.

@@ -9,4 +9,5 @@ export type Env = {
   USER_STORE: DurableObjectNamespace<UserStore>
   NOTION_CLIENT_ID: string
   NOTION_CLIENT_SECRET: string
+  SECRET: string
 }

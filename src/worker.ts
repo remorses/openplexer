@@ -6,7 +6,8 @@
 import * as errore from 'errore'
 import * as z from 'zod'
 import { Spiceflow } from 'spiceflow'
-import { Client, APIResponseError } from '@notionhq/client'
+import { Client, APIResponseError, PartialUserObjectResponse } from '@notionhq/client'
+import { createLibsqlProxy } from 'libsqlproxy'
 import type { Env } from './env.ts'
 
 export { UserStore } from './user-store.ts'
@@ -388,8 +389,20 @@ const app = new Spiceflow()
 
 export type App = typeof app
 
+const libsqlProxy = createLibsqlProxy<Env>({
+  secret: (env) => env.SECRET,
+  getStub: ({ namespace, env }) => {
+    const id = env.USER_STORE.idFromName(namespace)
+    return env.USER_STORE.get(id)
+  },
+})
+
 export default {
   fetch(request: Request, env: Env) {
+    const url = new URL(request.url)
+    if (url.hostname.startsWith('libsqlproxy')) {
+      return libsqlProxy(request, env)
+    }
     return app.handle(request, { state: { env } })
   },
 }

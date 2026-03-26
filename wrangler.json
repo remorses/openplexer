@@ -35,6 +35,10 @@
     {
       "pattern": "openplexer.com",
       "custom_domain": true
+    },
+    {
+      "pattern": "libsqlproxy.openplexer.com",
+      "custom_domain": true
     }
   ],
   "env": {
@@ -63,6 +67,10 @@
       "routes": [
         {
           "pattern": "preview.openplexer.com",
+          "custom_domain": true
+        },
+        {
+          "pattern": "libsqlproxy-preview.openplexer.com",
           "custom_domain": true
         }
       ]

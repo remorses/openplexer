@@ -203,6 +203,23 @@ Use cases:
 
 If you use [kimaki](https://kimaki.xyz) to run coding sessions from Discord, openplexer automatically detects the kimaki CLI and adds a Discord thread URL to each session card. This links the Notion board directly to the Discord conversation where the work is happening.
 
+## Admin database access
+
+The UserStore Durable Object's SQLite database is exposed via [libsqlproxy](https://github.com/remorses/kimaki/tree/main/libsqlproxy) at `libsqlproxy.openplexer.com`. Connect with any libSQL client for debugging, analytics, or admin operations.
+
+```
+libsql://libsqlproxy.openplexer.com
+```
+
+Get the full connection URL (with auth token from Doppler):
+
+```bash
+pnpm libsql
+# prints: libsql://libsqlproxy.openplexer.com?authToken=admin:<SECRET>
+```
+
+Paste that URL into any libSQL client (Outerbase, `@libsql/client`, `libsql` CLI, etc.).
+
 ## License
 
 MIT
