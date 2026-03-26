@@ -330,7 +330,7 @@ export async function createExamplePage({
 }): Promise<string> {
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
-    icon: { type: 'emoji' as const, emoji: '📋' },
+    icon: { type: 'external' as const, external: { url: 'https://www.notion.so/icons/checklist_lightgray.svg' } },
     properties: {
       Name: { title: [{ text: { content: 'Sessions will appear here automatically' } }] },
       Status: { status: { name: 'Not Started' } },

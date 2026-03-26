@@ -15,7 +15,7 @@ import {
   ensureBoardView,
   rateLimitedCall,
 } from './notion.ts'
-import { resolveRepoIcon } from './emoji.ts'
+import { resolveSessionIcon } from './icon.ts'
 import { APIResponseError } from '@notionhq/client'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
