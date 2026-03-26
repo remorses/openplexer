@@ -56,6 +56,12 @@ const apiFetch = createSpiceflowFetch<App>(OPENPLEXER_URL)
 const KIMAKI_RETRY_WINDOW_MS = 2 * 60 * 1000 // 2 minutes
 const sessionKimakiState = new Map<string, { createdAt: number; hasKimakiUrl: boolean }>()
 
+// Track sessions that were created without a PR URL so we can retry
+// on subsequent sync ticks. PRs are often opened after the session starts,
+// so we retry for PR_RETRY_WINDOW_MS (10 minutes).
+const PR_RETRY_WINDOW_MS = 10 * 60 * 1000
+const sessionPrState = new Map<string, { createdAt: number; hasPrUrl: boolean }>()
+
 // In-memory cache: cwd → stable repo identity (slug + url). Branch is NOT
 // cached because it can change (user switches branches, new sessions on
 // different branches sharing the same cwd). Branch is resolved fresh only
@@ -101,7 +107,6 @@ export async function startSyncLoop({
     const schemaResult = await ensureBoardSchema({
       notion: createNotionClient({ token: board.notionToken }),
       databaseId: board.notionDatabaseId,
-      clients: config.clients,
       assigneeField: config.assigneeField,
     }).catch((e) => {
       if (e instanceof APIResponseError && e.status === 401)
@@ -120,7 +125,6 @@ export async function startSyncLoop({
       const retryResult = await ensureBoardSchema({
         notion: createNotionClient({ token: board.notionToken }),
         databaseId: board.notionDatabaseId,
-        clients: config.clients,
         assigneeField: config.assigneeField,
       }).catch((e) => new NotionApiError({ operation: 'ensure schema (retry)', cause: e }))
       if (retryResult instanceof Error) {
@@ -196,7 +200,7 @@ async function syncOnce({
 
   let dirty = false
   for (const board of config.boards) {
-    const result = await syncBoard({ board, sessions: topLevelSessions, repoIcons: config.repoIcons, assigneeField: config.assigneeField })
+    const result = await syncBoard({ board, sessions: topLevelSessions, assigneeField: config.assigneeField })
 
     if (result instanceof NotionUnauthorizedError) {
       console.warn(`Token expired for ${board.notionWorkspaceName}, refreshing...`)
@@ -206,7 +210,7 @@ async function syncOnce({
         continue
       }
       // Retry once with the new token
-      const retryResult = await syncBoard({ board, sessions: topLevelSessions, repoIcons: config.repoIcons, assigneeField: config.assigneeField })
+      const retryResult = await syncBoard({ board, sessions: topLevelSessions, assigneeField: config.assigneeField })
       if (retryResult instanceof Error) {
         console.error(`Sync failed after token refresh for ${board.notionWorkspaceName}:`, retryResult.message)
         continue
@@ -229,12 +233,10 @@ async function syncOnce({
 async function syncBoard({
   board,
   sessions,
-  repoIcons,
   assigneeField,
 }: {
   board: OpenplexerBoard
   sessions: TaggedSession[]
-  repoIcons?: Record<string, string>
   assigneeField?: boolean
 }): Promise<NotionUnauthorizedError | boolean> {
   const notion = createNotionClient({ token: board.notionToken })
@@ -302,14 +304,25 @@ async function syncBoard({
 
       // Retry kimaki URL for sessions that were created without one
       // (race condition: openplexer sees the session before kimaki writes the thread association)
-      const kimakiKey = `${board.notionDatabaseId}:${session.sessionId}`
+      const stateKey = `${board.notionDatabaseId}:${session.sessionId}`
       const kimakiUrl = await (async (): Promise<string | undefined> => {
         if (session.source !== 'opencode') return undefined
-        const state = sessionKimakiState.get(kimakiKey)
+        const state = sessionKimakiState.get(stateKey)
         if (!state || state.hasKimakiUrl) return undefined
         if (Date.now() - state.createdAt >= KIMAKI_RETRY_WINDOW_MS) return undefined
         const url = await getKimakiDiscordUrl(session.sessionId)
         if (url) state.hasKimakiUrl = true
+        return url
+      })()
+
+      // Retry PR URL for sessions that were created without one
+      // (PR may be opened after the session starts)
+      const prUrl = await (async (): Promise<string | undefined> => {
+        const state = sessionPrState.get(stateKey)
+        if (!state || state.hasPrUrl) return undefined
+        if (Date.now() - state.createdAt >= PR_RETRY_WINDOW_MS) return undefined
+        const url = await getPrUrl(repoSlug, cached.branch ?? 'main')
+        if (url) state.hasPrUrl = true
         return url
       })()
 
@@ -321,8 +334,9 @@ async function syncBoard({
       const hasKimakiUpdate = !!kimakiUrl
       const hasShareUrlUpdate = !!shareUrl && shareUrl !== cached.shareUrl
       const activityChanged = !!newActivity && newActivity !== cached.activity
+      const hasPrUpdate = !!prUrl
 
-      if (!titleChanged && !updatedAtChanged && !hasKimakiUpdate && !hasShareUrlUpdate && !activityChanged) {
+      if (!titleChanged && !updatedAtChanged && !hasKimakiUpdate && !hasShareUrlUpdate && !activityChanged && !hasPrUpdate) {
         continue
       }
 
@@ -336,6 +350,7 @@ async function syncBoard({
           shareUrl: hasShareUrlUpdate ? shareUrl : undefined,
           kimakiUrl,
           activity: activityChanged ? newActivity : undefined,
+          prUrl,
         }),
       ).catch((e) => {
         if (e instanceof APIResponseError && e.status === 401)
@@ -357,6 +372,7 @@ async function syncBoard({
         shareUrl: shareUrl ?? cached.shareUrl,
         activity: newActivity ?? cached.activity,
         model: cached.model,
+        prUrl: prUrl ?? cached.prUrl,
       }
       dirty = true
     } else {
@@ -391,6 +407,9 @@ async function syncBoard({
       // Fetch first user message (prompt + model) from agent — only available for opencode
       const firstMsg = await session.getFirstMessage?.(session.sessionId).catch(() => undefined)
 
+      // Try to find an open PR for this branch
+      const prUrl = await getPrUrl(repoSlug, branch)
+
       const pageId = await rateLimitedCall(() =>
         createSessionPage({
           notion,
@@ -409,9 +428,10 @@ async function syncBoard({
           createdAt: new Date().toISOString(),
           updatedAt: session.updatedAt || undefined,
           activity: session.activity,
-          icon: resolveRepoIcon({ slug: repoSlug, branch, repoIcons }),
+          iconUrl: resolveSessionIcon({ sessionId: session.sessionId, branch }),
           model: firstMsg?.model,
           firstPrompt: firstMsg?.prompt,
+          prUrl: prUrl || undefined,
         }),
       ).catch((e) => {
         if (e instanceof APIResponseError && e.status === 401)
@@ -432,10 +452,16 @@ async function syncBoard({
         shareUrl: shareUrl ?? '',
         activity: session.activity,
         model: firstMsg?.model,
+        branch,
+        prUrl: prUrl ?? undefined,
       }
       sessionKimakiState.set(`${board.notionDatabaseId}:${session.sessionId}`, {
         createdAt: Date.now(),
         hasKimakiUrl: !!kimakiUrl,
+      })
+      sessionPrState.set(`${board.notionDatabaseId}:${session.sessionId}`, {
+        createdAt: Date.now(),
+        hasPrUrl: !!prUrl,
       })
       dirty = true
       const notionUrl = `https://notion.so/${pageId.replace(/-/g, '')}`
@@ -482,6 +508,28 @@ async function refreshBoardToken({
   board.notionRefreshToken = data.refreshToken
   writeConfig(config)
   console.log(`Refreshed Notion token for ${board.notionWorkspaceName}`)
+}
+
+// Try to get GitHub PR URL for a branch via gh CLI.
+// Returns undefined when gh isn't installed, no PR exists for the branch,
+// or the command fails — all expected cases during normal operation.
+async function getPrUrl(repoSlug: string, branch: string): Promise<string | undefined> {
+  // Skip default branches — they never have PRs targeting themselves
+  if (branch === 'main' || branch === 'master') return undefined
+
+  const result = await execFileAsync(
+    'gh',
+    ['pr', 'list', '--head', branch, '--repo', repoSlug, '--json', 'url', '--limit', '1'],
+    { timeout: 5000 },
+  ).catch(() => undefined)
+  if (!result) return undefined
+
+  const parsed = errore.try({
+    try: () => JSON.parse(result.stdout) as Array<{ url?: string }>,
+    catch: (e) => new Error('Invalid JSON from gh pr list', { cause: e }),
+  })
+  if (parsed instanceof Error) return undefined
+  return parsed[0]?.url
 }
 
 // Try to get kimaki Discord URL for a session via kimaki CLI.

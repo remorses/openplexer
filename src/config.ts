@@ -16,6 +16,10 @@ export type SyncedSession = {
   activity?: string
   /** Model ID written to the Model property (for change detection) */
   model?: string
+  /** Git branch name at session creation time (used for PR detection retries) */
+  branch?: string
+  /** GitHub pull request URL for the session's branch */
+  prUrl?: string
 }
 
 export type OpenplexerBoard = {

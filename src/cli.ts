@@ -339,7 +339,7 @@ async function connectFlow({ assigneeField }: { assigneeField?: boolean } = {}):
 
   // Step 6: Create database and seed with an example page
   s.start('Creating board database...')
-  const { databaseId } = await createBoardDatabase({ notion, pageId, clients: config.clients, assigneeField: config.assigneeField })
+  const { databaseId } = await createBoardDatabase({ notion, pageId, assigneeField: config.assigneeField })
   await createExamplePage({ notion, databaseId })
   s.stop('Board database created')
 

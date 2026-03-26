@@ -6,7 +6,7 @@ import type {
   DatabaseObjectResponse,
   PageObjectResponse,
 } from '@notionhq/client/build/src/api-endpoints.js'
-import type { AcpClient } from './config.ts'
+
 
 export const STATUS_OPTIONS = [
   { name: 'Not Started', color: 'default' as const },
@@ -88,9 +88,7 @@ export async function getRootPages({ notion }: { notion: Client }): Promise<Root
 
 /** Build the canonical set of properties for a board database.
  *  Used both at creation and to ensure existing boards have all expected props. */
-function buildBoardProperties({ clients, assigneeField }: { clients: AcpClient[]; assigneeField?: boolean }): Record<string, unknown> {
-  const hasOpencode = clients.includes('opencode')
-
+function buildBoardProperties({ assigneeField }: { assigneeField?: boolean }): Record<string, unknown> {
   const properties: Record<string, unknown> = {
     Name: { type: 'title', title: {} },
     Status: {
@@ -121,9 +119,8 @@ function buildBoardProperties({ clients, assigneeField }: { clients: AcpClient[]
     properties['Assignee'] = { type: 'people', people: {} }
   }
 
-  if (hasOpencode) {
     properties['Kimaki'] = { type: 'url', url: {} }
-  }
+    properties['PR'] = { type: 'url', url: {} }
 
   return properties
 }
@@ -131,15 +128,13 @@ function buildBoardProperties({ clients, assigneeField }: { clients: AcpClient[]
 export async function createBoardDatabase({
   notion,
   pageId,
-  clients,
   assigneeField,
 }: {
   notion: Client
   pageId: string
-  clients: AcpClient[]
   assigneeField?: boolean
 }): Promise<CreateDatabaseResult> {
-  const properties = buildBoardProperties({ clients, assigneeField })
+  const properties = buildBoardProperties({ assigneeField })
 
   const database = await notion.databases.create({
     parent: { type: 'page_id', page_id: pageId },
@@ -295,12 +290,10 @@ export async function ensureBoardView({
 export async function ensureBoardSchema({
   notion,
   databaseId,
-  clients,
   assigneeField,
 }: {
   notion: Client
   databaseId: string
-  clients: AcpClient[]
   assigneeField?: boolean
 }): Promise<void> {
   const database = await notion.databases.retrieve({ database_id: databaseId }) as DatabaseObjectResponse
@@ -309,7 +302,7 @@ export async function ensureBoardSchema({
 
   // Send all expected properties — Notion merges, so existing ones are untouched
   // and missing ones get created.
-  const properties = buildBoardProperties({ clients, assigneeField })
+  const properties = buildBoardProperties({ assigneeField })
 
   // Remove 'Name' (title property) — can't be added via update, it already exists
   delete properties['Name']
@@ -458,9 +451,10 @@ export async function createSessionPage({
   createdAt,
   updatedAt,
   activity,
-  icon,
+  iconUrl,
   model,
   firstPrompt,
+  prUrl,
 }: {
   notion: Client
   databaseId: string
@@ -478,12 +472,14 @@ export async function createSessionPage({
   createdAt?: string
   updatedAt?: string
   activity?: string
-  /** Emoji icon for the page (deterministic per-repo) */
-  icon?: string
+  /** Notion icon URL for the page (deterministic per-session) */
+  iconUrl?: string
   /** Model ID used for this session (e.g. "claude-sonnet-4-20250514") */
   model?: string
   /** First user prompt text — stored in the Prompt property */
   firstPrompt?: string
+  /** GitHub pull request URL for the session's branch */
+  prUrl?: string
 }): Promise<string> {
   const properties: Record<string, unknown> = {
     Name: { title: [{ text: { content: title } }] },
@@ -511,6 +507,9 @@ export async function createSessionPage({
   if (kimakiUrl) {
     properties['Kimaki'] = { url: kimakiUrl }
   }
+  if (prUrl) {
+    properties['PR'] = { url: prUrl }
+  }
   if (createdAt) {
     properties['Created'] = { date: { start: createdAt } }
   }
@@ -529,7 +528,7 @@ export async function createSessionPage({
 
   const page = await notion.pages.create({
     parent: { database_id: databaseId },
-    ...(icon && { icon: { type: 'emoji' as const, emoji: icon } }),
+    ...(iconUrl && { icon: { type: 'external' as const, external: { url: iconUrl } } }),
     properties: properties as Parameters<Client['pages']['create']>[0]['properties'],
   })
 
@@ -544,6 +543,7 @@ export async function updateSessionPage({
   shareUrl,
   kimakiUrl,
   activity,
+  prUrl,
 }: {
   notion: Client
   pageId: string
@@ -552,6 +552,7 @@ export async function updateSessionPage({
   shareUrl?: string
   kimakiUrl?: string
   activity?: string
+  prUrl?: string
 }): Promise<void> {
   const properties: Record<string, unknown> = {}
 
@@ -566,6 +567,9 @@ export async function updateSessionPage({
   }
   if (kimakiUrl) {
     properties['Kimaki'] = { url: kimakiUrl }
+  }
+  if (prUrl) {
+    properties['PR'] = { url: prUrl }
   }
   if (activity) {
     properties['Activity'] = { select: { name: activity } }
