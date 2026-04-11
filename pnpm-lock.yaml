@@ -33,8 +33,11 @@ importers:
         specifier: '*'
         version: 0.14.1
       goke:
-        specifier: ^6.3.0
-        version: 6.3.0
+        specifier: ^6.6.1
+        version: 6.6.1
+      libsqlproxy:
+        specifier: ^0.1.0
+        version: 0.1.0
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20260130.0
@@ -1470,8 +1473,8 @@ packages:
   get-tsconfig@4.13.6:
     resolution: {integrity: sha512-shZT/QMiSHc/YBLxxOkMtgSid5HFoauqCE3/exfsEcwg1WkeqjG+V40yBbBrsD+jW2HDXcs28xOfcbm2jI8Ddw==}
 
-  goke@6.3.0:
-    resolution: {integrity: sha512-U9vmFbQdHpfUAO9nzLn7Kaxbz7u5X5d5bgme0P7dCw8Eb7MozpFvsaUgcoD2JNx0anaQUZRs0Hb1omZUOCAM7A==}
+  goke@6.6.1:
+    resolution: {integrity: sha512-J2tmLZC9WE1IpPd1WROKMxla4ko0mthd44C/hdURKb6XPZtdNkLPyLFJxGOvmNmLpVJ6EkQkVGqlRl9Rpq1cbg==}
     engines: {node: '>=18'}
 
   gopd@1.2.0:
@@ -1544,6 +1547,9 @@ packages:
   kleur@4.1.5:
     resolution: {integrity: sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ==}
     engines: {node: '>=6'}
+
+  libsqlproxy@0.1.0:
+    resolution: {integrity: sha512-m1e1MxP9ObcQw9QjX5Ru2Y9BzAC7IbDcAnX2FMQ3LvSY9ODXq02yd4u9RHVJRREu1p6QXJL72X3cYfeWlgQpLg==}
 
   lightningcss-android-arm64@1.32.0:
     resolution: {integrity: sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg==}
@@ -3138,9 +3144,7 @@ snapshots:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
-  goke@6.3.0:
-    dependencies:
-      picocolors: 1.1.1
+  goke@6.6.1: {}
 
   gopd@1.2.0:
     optional: true
@@ -3209,6 +3213,8 @@ snapshots:
     optional: true
 
   kleur@4.1.5: {}
+
+  libsqlproxy@0.1.0: {}
 
   lightningcss-android-arm64@1.32.0:
     optional: true

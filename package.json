@@ -46,7 +46,7 @@
     "@zed-industries/codex-acp": "^0.10.0",
     "drizzle-orm": "^0.45.1",
     "errore": "*",
-    "goke": "^6.3.0",
+    "goke": "^6.6.1",
     "libsqlproxy": "^0.1.0"
   },
   "devDependencies": {
