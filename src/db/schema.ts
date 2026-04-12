@@ -4,7 +4,7 @@
 // per Notion OAuth user, with boards as child resources.
 
 import * as sqliteCore from 'drizzle-orm/sqlite-core'
-import * as orm from 'drizzle-orm'
+import { defineRelations } from 'drizzle-orm'
 
 const { sqliteTable, text, integer, uniqueIndex } = sqliteCore
 
@@ -27,10 +27,6 @@ export const accounts = sqliteTable(
   ],
 )
 
-export const accountsRelations = orm.relations(accounts, ({ many }) => ({
-  boards: many(boards),
-}))
-
 export const boards = sqliteTable(
   'boards',
   {
@@ -49,9 +45,14 @@ export const boards = sqliteTable(
   ],
 )
 
-export const boardsRelations = orm.relations(boards, ({ one }) => ({
-  account: one(accounts, {
-    fields: [boards.accountId],
-    references: [accounts.id],
-  }),
+export const relations = defineRelations({ accounts, boards }, (r) => ({
+  accounts: {
+    boards: r.many.boards(),
+  },
+  boards: {
+    account: r.one.accounts({
+      from: r.boards.accountId,
+      to: r.accounts.id,
+    }),
+  },
 }))

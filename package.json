@@ -44,7 +44,7 @@
     "@opencode-ai/sdk": "^1.2.27",
     "@zed-industries/claude-agent-acp": "^0.22.2",
     "@zed-industries/codex-acp": "^0.10.0",
-    "drizzle-orm": "^0.45.1",
+    "drizzle-orm": "1.0.0-beta.21",
     "errore": "*",
     "goke": "^6.6.1",
     "libsqlproxy": "^0.1.0"
@@ -52,7 +52,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260130.0",
     "@types/node": "^22.0.0",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "1.0.0-beta.21",
     "spiceflow": "1.18.0-rsc.11",
     "tsx": "^4.21.0",
     "typescript": "5.8.3",

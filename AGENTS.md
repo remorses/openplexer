@@ -16,6 +16,8 @@ This repo uses the errore pattern (errors as values, not exceptions). ALWAYS loa
 
 ## drizzle orm
 
+This repo uses drizzle-orm v1 beta with Relational Queries v2 (object-style where).
+
 Always use namespace imports for drizzle-orm to avoid polluting the local scope with generic names like `eq`, `and`, `gt`:
 
 ```ts
@@ -23,10 +25,25 @@ import * as orm from 'drizzle-orm'
 import * as sqliteCore from 'drizzle-orm/sqlite-core'
 import * as durable from 'drizzle-orm/durable-sqlite'
 
-// then use orm.eq, orm.and, orm.relations, etc.
+// then use orm.eq, orm.and, etc.
 ```
 
-Use the Prisma-like `db.query` API (`findFirst`, `findMany` with `with` for relations) over `db.select().from()` for reads. Use `db.insert`, `db.update`, `db.delete` for writes (no query API equivalent).
+Relations are defined in `src/db/schema.ts` using `defineRelations` (v2 API). Pass `relations` to `drizzle()`.
+
+Use the Prisma-like `db.query` API with **object-style `where`** for reads:
+
+```ts
+// GOOD: object-style where (v2) — no imports needed for operators
+db.query.accounts.findFirst({ where: { refreshToken } }).sync()
+
+// For complex filters: use OR, AND, NOT, gt, like, etc.
+db.query.accounts.findMany({
+  where: { OR: [{ status: 'active' }, { name: { like: 'John%' } }] },
+  with: { boards: true },
+})
+```
+
+Use `db.insert`, `db.update`, `db.delete` for writes (no query API equivalent). Write `.where()` clauses still use `orm.eq()`.
 
 ## backward compatibility
 

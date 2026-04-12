@@ -13,12 +13,12 @@ import * as schema from './db/schema.ts'
 import type { Env } from './env.ts'
 
 export class UserStore extends DurableObject<Env> {
-  db: durable.DrizzleSqliteDODatabase<typeof schema>
+  db: durable.DrizzleSqliteDODatabase<typeof schema, typeof schema.relations>
   #hrana: LibsqlHandler
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
-    this.db = durable.drizzle(ctx.storage, { schema })
+    this.db = durable.drizzle(ctx.storage, { schema, relations: schema.relations })
     this.#hrana = createLibsqlHandler(durableObjectExecutor(ctx.storage))
     ctx.blockConcurrencyWhile(async () => {
       await migrator.migrate(this.db, migrations)
@@ -35,7 +35,7 @@ export class UserStore extends DurableObject<Env> {
    *  Used for auth — the CLI sends its refresh token as Bearer. */
   async getAccountByRefreshToken(refreshToken: string) {
     const row = this.db.query.accounts.findFirst({
-      where: orm.eq(schema.accounts.refreshToken, refreshToken),
+      where: { refreshToken },
     }).sync()
     return row ?? null
   }
@@ -54,7 +54,7 @@ export class UserStore extends DurableObject<Env> {
     const now = Date.now()
 
     const existing = this.db.query.accounts.findFirst({
-      where: orm.eq(schema.accounts.notionUserId, data.notionUserId),
+      where: { notionUserId: data.notionUserId },
     }).sync()
 
     if (existing) {
@@ -104,7 +104,7 @@ export class UserStore extends DurableObject<Env> {
     },
   ) {
     const existing = this.db.query.boards.findFirst({
-      where: orm.eq(schema.boards.notionDatabaseId, data.notionDatabaseId),
+      where: { notionDatabaseId: data.notionDatabaseId },
     }).sync()
 
     if (existing) {
