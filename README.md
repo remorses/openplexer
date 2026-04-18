@@ -6,6 +6,8 @@ Track every coding session across your team in a Notion board. Automatically.
 npm install -g openplexer
 ```
 
+![openplexer board preview](board-preview.png)
+
 ## The problem
 
 AI coding agents are everywhere now. OpenCode, Claude Code, Codex — you run them in worktrees, in different repos, on different branches. You start a session to fix a bug, another to refactor auth, another to explore an idea. Some finish, some don't. Some need your attention, some are fine.
@@ -37,34 +39,26 @@ openplexer runs as a background daemon on your machine. It connects to your codi
                                      └────────────────────────┘
 ```
 
-Each session becomes a card on the board. You can see at a glance:
+Each session becomes a card on the board with its title, repo, branch, model, prompt, and links. You can see at a glance:
 
-- **What's in progress** — sessions that are still running or were never finished
+- **What's in progress** — sessions that are still running
 - **What's done** — completed sessions you can archive or review
 - **What needs attention** — sessions you manually flag for follow-up
-- **Who's working on what** — every card is assigned to the person who started it
-- **Which repo and branch** — direct links to the GitHub branch
+- **Which repo and branch** — direct links to the GitHub branch and PR
 - **How to resume** — a ready-to-paste CLI command to pick up where you left off
-
-## Collaborative by default
-
-The board is a shared Notion page. Multiple team members can connect their machines to the same board. Each person's sessions show up automatically, assigned to them.
-
-This means your team gets a single view of all active coding work:
-
-- Alice is refactoring the auth module on `feature/auth-v2` in `acme/backend` — **In Progress**
-- Bob finished the migration script on `fix/db-migrate` in `acme/infra` — **Done**
-- Charlie's session on `acme/frontend` needs review — **Needs Attention**
-
-No standups needed to know what's happening. No Slack messages asking "are you still working on that?" The board is always current because every machine syncs continuously.
-
-Each user controls which repos they sync to the shared board. If you're also hacking on personal side projects, those sessions stay off the shared board — only repos you explicitly select are tracked. This keeps the shared view clean and focused on team work.
 
 ## Getting started
 
-Run `openplexer` for the first time and the setup wizard walks you through everything:
+Install globally and run once — the setup wizard handles everything:
 
-**1. Pick your agents**
+```bash
+npm install -g openplexer
+openplexer
+```
+
+The wizard walks you through 4 steps:
+
+### 1. Pick your agents
 
 ```
 ◆  Which coding agents do you use?
@@ -73,13 +67,9 @@ Run `openplexer` for the first time and the setup wizard walks you through every
 │  ◻ Codex
 ```
 
-Select one or more. openplexer connects to each via ACP and merges all sessions into a single board.
+Select the agents you have installed. openplexer spawns each one's ACP server, lists all existing sessions, and auto-discovers every git repo you've been working in.
 
-**2. Auto-discover repos**
-
-openplexer spawns the ACP server, lists all your sessions, and extracts the git repos from their working directories. No manual configuration needed.
-
-**3. Select repos to track**
+### 2. Select repos to track
 
 ```
 ◆  Which repos to track?
@@ -89,136 +79,136 @@ openplexer spawns the ACP server, lists all your sessions, and extracts the git 
 │  ◻ acme/infra
 ```
 
-Pick specific repos for shared boards (recommended — keeps personal projects off the team board). Or select all if you want everything tracked.
+The repos are auto-detected from your session working directories — no manual config. Pick specific repos for shared team boards (keeps personal projects off) or select all.
 
-**4. Connect Notion**
+### 3. Connect Notion
 
-Your browser opens to authorize the Notion integration. Select the page where the board should live. No manual API tokens, no copying secrets — just click authorize and you're done.
+Your browser opens to Notion's OAuth page. Authorize the integration and select which page to share. No API tokens, no secrets, no `.env` files — just click authorize.
 
-**5. Board created**
+Behind the scenes: the CLI generates a random state token, opens `openplexer.com/auth/notion?state=<token>` in your browser, which redirects to Notion OAuth. After you authorize, `openplexer.com` (a Cloudflare Worker) exchanges the code for access + refresh tokens, stores them in KV with a 5-minute TTL. The CLI polls `/auth/status?state=<token>` until the tokens arrive.
 
-openplexer creates a database inside your selected Notion page with a kanban Board view grouped by status. An example card explains what each field means. Real sessions start appearing within seconds.
+### 4. Board created — sessions sync immediately
 
-**6. Run on login (optional)**
+openplexer creates a database inside your selected Notion page with a **kanban Board view** grouped by status (Not Started → In Progress → Done). Cards are sub-grouped by repo. An example card explains what each field means.
+
+The daemon starts syncing immediately. New sessions appear as cards within seconds. The CLI then asks if you want to register openplexer to run on login — say yes and it stays running in the background permanently.
 
 ```
 ◆  Register openplexer to run on login?
 │  Yes
 ```
 
-openplexer registers itself as a startup service so it runs in the background every time you log in. The board stays current without you having to think about it.
+That's it. Every coding session you start from now on automatically appears on the board.
+
+## Collaborative boards
+
+The board is a shared Notion page. Multiple team members install openplexer, run the setup wizard, and connect to the **same shared page**. Each person's sessions show up automatically.
+
+- Alice is refactoring the auth module on `feature/auth-v2` in `acme/backend` — **In Progress**
+- Bob finished the migration script on `fix/db-migrate` in `acme/infra` — **Done**
+- Charlie's session on `acme/frontend` needs review — **Needs Attention**
+
+No standups needed. No Slack messages asking "are you still working on that?" The board is always current.
+
+Each user controls which repos they sync. Personal side projects stay off the shared board.
 
 ## Board properties
 
-Every session card in Notion has these fields:
+Every session card has these fields:
 
 | Property | Type | Description |
 |---|---|---|
-| **Name** | Title | Session title from the agent |
-| **Status** | Select | `In Progress`, `Done`, `Needs Attention`, `Ignored`, `Not Started` |
-| **Activity** | Select | `Running` (agent generating), `Idle` (waiting for user). OpenCode only |
+| **Name** | Title | Session title generated by the agent |
+| **Status** | Status | `Not Started`, `In Progress`, `Done` (you manage this manually) |
+| **Activity** | Select | `Running` (agent generating) or `Idle` (waiting for input). OpenCode only |
 | **Repo** | Select | GitHub repo as `owner/repo` |
-| **Branch** | Text | Link to the branch on GitHub |
-| **Model** | Text | AI model used (e.g. `claude-sonnet-4-20250514`) |
+| **Branch** | Rich text | Clickable link to the branch on GitHub |
+| **Model** | Rich text | AI model used (e.g. `claude-sonnet-4-20250514`) |
+| **Prompt** | Rich text | First user message that started the session |
+| **PR** | URL | GitHub pull request URL (auto-detected via `gh` CLI) |
 | **Share URL** | URL | Public share link (OpenCode `/share`) |
-| **Resume** | Text | CLI command to resume the session |
-| **Assignee** | People | Notion user who authorized the integration |
-| **Folder** | Text | Local filesystem path |
-| **Kimaki** | URL | Discord thread link (if using kimaki). OpenCode only |
+| **Resume** | Rich text | CLI command to resume the session |
+| **Folder** | Rich text | Local filesystem path (e.g. `~/projects/repo`) |
+| **Kimaki** | URL | Discord thread link (if using [kimaki](https://kimaki.xyz)) |
 | **Created** | Date | When the session was first synced |
 | **Updated** | Date | Last update timestamp from the agent |
-| **Session ID** | Text | Internal ACP session identifier |
+| **Session ID** | Rich text | Internal ACP session identifier |
 
-**Status** is the only field you manage manually. Everything else is synced automatically. Move cards between columns as you triage — mark sessions as done when you're finished, flag ones that need attention, ignore ones you don't care about.
-
-### Silencing assignee notifications
-
-By default, Notion sends you a notification every time openplexer creates a new session card because it sets you as the Assignee. The Notion API doesn't support suppressing these notifications, but you can disable them in the Notion UI:
-
-1. Open your openplexer board in Notion
-2. Click the **Assignee** property header (or any card's Assignee field, then the gear icon)
-3. Under **Notify**, select **None**
-
-This stops all notifications from the Assignee property while keeping the assignment visible on cards.
+**Status** is the only field you manage manually — drag cards between columns to triage. Everything else syncs automatically.
 
 **Resume** gives you the exact command to pick up a session:
 
 ```bash
-# OpenCode sessions
+# OpenCode
 opencode --session ses_abc123
 
-# Claude Code sessions
+# Claude Code
 claude --resume ses_abc123
 
-# Codex sessions
+# Codex
 codex resume ses_abc123
 ```
+
+### Assignee (opt-in)
+
+The Assignee people property is disabled by default because Notion sends a notification on every new card. Enable it with:
+
+```bash
+openplexer --assignee
+```
+
+Then silence the notifications: open the board in Notion → click the **Assignee** property header → under **Notify**, select **None**.
 
 ## CLI commands
 
 ```bash
-openplexer              # Start daemon (first run triggers setup wizard)
-openplexer connect      # Add another board
-openplexer status       # Show sync state and session counts
-openplexer boards       # List all configured boards with URLs
-openplexer stop         # Kill the running daemon
-openplexer startup      # Show startup registration status
+openplexer                  # Start daemon (first run triggers setup wizard)
+openplexer connect          # Add another board
+openplexer status           # Show sync state and session counts
+openplexer boards           # List all configured boards with URLs
+openplexer stop             # Kill the running daemon
+openplexer startup          # Show startup registration status
 openplexer startup enable   # Register to run on login
 openplexer startup disable  # Unregister from login
 ```
 
 ## Multiple boards
 
-You can connect as many boards as you want. Each board is a separate Notion database with its own repo filter and assignee.
+Connect as many boards as you want — each is a separate Notion database with its own repo filter.
 
 ```bash
 openplexer connect
 ```
 
 Use cases:
-- **Team board** — shared page, filtered to company repos, everyone connects to it
+- **Team board** — shared page, filtered to company repos, everyone connects
 - **Personal board** — private page, all repos, just for you
 - **Project board** — scoped to a single repo for focused tracking
 
 ## How it works
 
-**ACP protocol** — openplexer spawns each agent's ACP server as a child process and communicates over stdio using the Agent Client Protocol. It lists all sessions with pagination and extracts git repo info from each session's working directory.
+**ACP protocol** — openplexer spawns each agent's ACP server as a child process. For OpenCode it uses the HTTP API (`opencode serve`) to get sessions across all projects globally. For Claude Code and Codex it uses ACP over stdio.
 
-**Sync loop** — every 5 seconds, openplexer polls all connected agents for sessions. New sessions get a Notion page created. Existing sessions get their title and timestamp updated. Only sessions created or updated after the board was connected are synced (no backfilling old sessions).
+**Sync loop** — every 5 seconds, openplexer polls all connected agents. New sessions get a Notion page created. Existing sessions get their title, timestamp, and activity updated. Only sessions created or updated after the board was connected are synced (no backfilling).
 
-**Single instance** — a lock port (default `29990`) ensures only one daemon runs at a time. Starting a new instance cleanly terminates the old one via SIGTERM, then SIGKILL if needed.
+**Token refresh** — Notion OAuth tokens expire. openplexer automatically refreshes them through the `openplexer.com` worker, which holds the client secret server-side. The CLI never touches Notion API credentials directly.
 
-**Notion OAuth** — authentication goes through `openplexer.com` (a Cloudflare Worker). The CLI opens your browser, you authorize, the worker exchanges the code for tokens and stores them in KV with a 5-minute TTL. The CLI polls for the result. No secrets to manage.
+**PR detection** — if `gh` CLI is installed, openplexer checks for open PRs matching each session's branch and adds a link. Retries for 10 minutes after session creation since PRs are often opened after the session starts.
 
-**Startup service** — cross-platform registration so openplexer starts automatically:
+**Title grace period** — agents generate session titles asynchronously. openplexer waits up to 5 minutes for titles to be generated before syncing, so cards don't appear with placeholder names.
+
+**Single instance** — a lock port ensures only one daemon runs at a time. Starting a new instance cleanly terminates the old one.
+
+**Startup service** — cross-platform registration:
 - **macOS**: launchd plist at `~/Library/LaunchAgents/com.openplexer.plist`
 - **Linux**: XDG autostart at `~/.config/autostart/openplexer.desktop`
-- **Windows**: registry key at `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- **Windows**: registry key at `HKCU\...\Run`
 
-**Config** — stored at `~/.openplexer/config.json`. Contains the list of agents, board configurations (Notion tokens, database IDs, tracked repos), and a map of synced session IDs to Notion page IDs.
-
-**Rate limiting** — Notion API calls are throttled to ~3/second to stay within rate limits.
+**Config** — stored at `~/.openplexer/config.json`. Contains agents, board configs (Notion tokens, database IDs, tracked repos), and a map of synced session IDs to Notion page IDs.
 
 ## Discord integration
 
 If you use [kimaki](https://kimaki.xyz) to run coding sessions from Discord, openplexer automatically detects the kimaki CLI and adds a Discord thread URL to each session card. This links the Notion board directly to the Discord conversation where the work is happening.
-
-## Admin database access
-
-The UserStore Durable Object's SQLite database is exposed via [libsqlproxy](https://github.com/remorses/kimaki/tree/main/libsqlproxy) at `libsqlproxy.openplexer.com`. Connect with any libSQL client for debugging, analytics, or admin operations.
-
-```
-libsql://libsqlproxy.openplexer.com
-```
-
-Get the full connection URL (with auth token from Doppler):
-
-```bash
-pnpm libsql
-# prints: libsql://libsqlproxy.openplexer.com?authToken=admin:<SECRET>
-```
-
-Paste that URL into any libSQL client (Outerbase, `@libsql/client`, `libsql` CLI, etc.).
 
 ## License
 
