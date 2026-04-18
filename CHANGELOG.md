@@ -1,5 +1,63 @@
 # openplexer
 
+## 0.3.0
+
+1. **New Activity property** — session cards now show real-time activity status. A blue **Running** pill means the agent is actively generating; yellow **Idle** means it's waiting for user input. Polls opencode's bulk status endpoint every sync tick:
+
+   ```
+   Activity: Running  (blue)
+   Activity: Idle     (yellow)
+   ```
+
+   OpenCode sessions only — Claude Code and Codex don't expose activity data.
+
+2. **First user prompt & model on session pages** — each session page now displays the initial prompt that started the conversation, plus the AI model being used:
+
+   - **Prompt** — written as a rich text property on the Notion page (write-once, so your own notes won't be overwritten)
+   - **Model** — a new text property showing the model ID (e.g. `claude-sonnet-4-20250514`)
+
+   OpenCode sessions only.
+
+3. **Auto-share sessions with public URLs** — openplexer automatically creates a public share link for each session using opencode's `/share` endpoint. The **Share URL** property appears on every card as a clickable link:
+
+   ```bash
+   # The share link is generated automatically — no action needed
+   # Click the Share URL property on any card to open it
+   ```
+
+   OpenCode sessions only.
+
+4. **New `--assignee` flag** — opt-in to assign Notion users to session cards. Disabled by default because Notion sends a notification per assignment and the API can't suppress them:
+
+   ```bash
+   openplexer --assignee    # enable assignee property on cards
+   ```
+
+   If enabled, manually silence notifications: open the board → click Assignee property header → set Notify to None.
+
+5. **GitHub PR URL detection** — session cards now show a **PR** property with a direct link to the open pull request for the session's branch. Automatically detects PRs using the `gh` CLI and retries for 10 minutes after session start (useful when PRs are opened after the session begins).
+
+6. **Notion native SVG icons** — replaced emoji-based icons with Notion's 158-icon catalog. Icons are deterministically assigned per session using an FNV-1a hash of the session ID. Branch colors are also hash-based, with default branches (main/master) always getting light gray. Icons now render consistently with Notion's UI.
+
+7. **Cleaner board cards** — improved card visibility and information density:
+
+   - **Branch** shows short name with clickable GitHub link (not full URL)
+   - **Folder** shows `~/projects/repo` instead of full absolute path
+   - **Created** date tracks when openplexer first synced the session
+   - Status, Repo, Updated, and Created are now visible on kanban cards by default
+
+8. **Filter out agent sub-sessions** — internal agent tasks (child sessions with a `parentId`) are no longer synced to the board. Only top-level sessions appear, reducing noise.
+
+9. **Skip placeholder titles** — new sessions with auto-generated placeholder titles (like "New session...") are held back for up to 5 minutes while the agent finishes generating the real title. Falls back to syncing after the grace period if title generation fails.
+
+10. **Notion OAuth token refresh** — refresh tokens are now automatically exchanged when expired. Sessions stay synced without re-authenticating. Worker stores accounts in a Durable Object with SQLite persistence.
+
+11. **Durable Object backend** — user accounts and board configurations are persisted in a Cloudflare Durable Object running SQLite with Drizzle ORM. The database is exposed via `libsql://libsqlproxy.openplexer.com` for admin access:
+
+    ```bash
+    pnpm libsql    # prints connection URL with auth token
+    ```
+
 ## 0.2.0
 
 1. **Fixed session syncing for opencode** — sessions now sync from all projects, not just one. Previously opencode's ACP protocol scoped sessions to a single project directory, returning ~85 stale sessions. Now openplexer spawns `opencode serve` and uses the `/experimental/session` endpoint with the `@opencode-ai/sdk` v2 client to list all sessions globally.
